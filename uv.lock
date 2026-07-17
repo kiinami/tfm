@@ -1,0 +1,19 @@
+version = 1
+revision = 3
+requires-python = ">=3.14"
+
+[manifest]
+members = [
+    "eulerian-warp",
+    "tfm",
+]
+
+[[package]]
+name = "eulerian-warp"
+version = "0.1.0"
+source = { editable = "src/eulerian_warp" }
+
+[[package]]
+name = "tfm"
+version = "0.1.0"
+source = { virtual = "." }
