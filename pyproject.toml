@@ -2,9 +2,13 @@
 name = "tfm"
 version = "0.1.0"
 requires-python = ">=3.14"
-dependencies = []
+dependencies = [
+    "canny",
+    "warp-lang>=1.15.0",
+]
+
+[tool.uv.sources]
+canny = { workspace = true }
 
 [tool.uv.workspace]
-members = [
-    "src/eulerian_warp",
-]
+members = ["src/*"]

@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/.idea/eulerian-warp.iml" filepath="$PROJECT_DIR$/.idea/eulerian-warp.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/canny.iml" filepath="$PROJECT_DIR$/.idea/canny.iml" />
       <module fileurl="file://$PROJECT_DIR$/.idea/tfm.iml" filepath="$PROJECT_DIR$/.idea/tfm.iml" />
     </modules>
   </component>

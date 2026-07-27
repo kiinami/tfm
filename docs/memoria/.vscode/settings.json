@@ -1,0 +1,28 @@
+{
+    "[typst-code]": {
+        "editor.quickSuggestions": {
+            "other": false,
+            "comments": false,
+            "strings": false
+        },
+        "editor.suggestOnTriggerCharacters": true,
+        "editor.wordBasedSuggestions": "off",
+        "editor.parameterHints.enabled": false,
+        "editor.inlineSuggest.enabled": false,
+        "editor.wordWrap": "on",
+        "editor.minimap.enabled": false
+    },
+    "[typst]": {
+        "editor.quickSuggestions": {
+            "other": false,
+            "comments": false,
+            "strings": false
+        },
+        "editor.suggestOnTriggerCharacters": true,
+        "editor.wordBasedSuggestions": "off",
+        "editor.parameterHints.enabled": false,
+        "editor.inlineSuggest.enabled": false,
+        "editor.wordWrap": "on",
+        "editor.minimap.enabled": false
+    },
+}

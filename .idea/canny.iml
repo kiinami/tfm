@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <module external.system.id="pyproject.toml" type="PYTHON_MODULE" version="4">
   <component name="NewModuleRootManager">
-    <content url="file://$MODULE_DIR$/src/eulerian_warp">
-      <sourceFolder url="file://$MODULE_DIR$/src/eulerian_warp/src" />
+    <content url="file://$MODULE_DIR$/src/canny">
+      <sourceFolder url="file://$MODULE_DIR$/src/canny/src" isTestSource="false" />
     </content>
-    <orderEntry type="jdk" jdkName="uv (tfm)" jdkType="Python SDK" />
+    <orderEntry type="jdk" jdkName="uv (tfm) (2)" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />
   </component>
 </module>
