@@ -1,0 +1,19 @@
+[project]
+name = "mpm-explicit"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "kiinami", email = "kinami@posteo.net" }
+]
+requires-python = ">=3.14"
+dependencies = [
+    "warp-lang>=1.15.0",
+]
+
+[project.scripts]
+mpm-explicit = "mpm_explicit:main"
+
+[build-system]
+requires = ["uv_build>=0.11.26,<0.12.0"]
+build-backend = "uv_build"

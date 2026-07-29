@@ -65,9 +65,6 @@
   - The energy density function, defined by $ Psi(#FE, #FP) = #shear ||#FE - bold(R)_E||_F^2 + #lame/2 (bold(J)_E - 1)^2 \  $
   - The yield criterion, that says that values of #FE must be restricted to the interval $[1 - theta_c, 1 + theta_s]$, where $theta_c$ and $theta_s$ are inputs
   - The split of $F_p$ into #FE and #FP with the following process:
-    1. Tentatively define $ bold(hat(F))_(E p)^(n+1) = (I + Delta t nabla bold(v)_p^(n+1)) bold(F)_(E p)^n space.quad "and" space.quad bold(hat(F))_(P p)^(n+1) = bold(F)_(P p)^n $ such that the total gradient is defined by $ bold(F)_p^(n+1) = (I + Delta t nabla bold(v)_p^(n+1)) bold(F)_(E p)^n bold(F)_(P p)^n = bold(hat(F))_(E p)^(n+1) bold(hat(F))_(P p)^(n+1) $
-    2. Enforce yield by clamping, first by computing the SVD of the tentative elastic part with $ bold(hat(F))_(E p)^(n+1) = U_p hat(Sigma)_p V_p^T $ then by clamping the singular values with $ Sigma_p = op("clamp")(hat(Sigma)_p, [1 - theta_c, 1 + theta+p]) $
-    3. Reassemble the final elastic and plastic parts with $ F_(E p)^(n+1) = U_p Sigma_p V_p^T space.quad "and" space.quad F_(P p)^(n+1) = V_p Sigma_p^(-1) U_p^T F_p^(n+1) $
 
 #divider()
 
@@ -133,14 +130,23 @@ We are now in Eulerian space
   - With the formula $ bold(v_i)^star = bold(v_i)^n + Delta t m_bold(i)^(-1) bold(f_i)^n $
 
 5. Resolve collisions of grid-node velocities against scripted bodies
-  - // TODO: fill from Section V
+  - Calculate the function $phi(bold(x))$ for each node for each scripted object, it being the signed distance from point $bold(x)$ to the object's surface
+  - Given the velocity $bold(v)$ to be collided at a point where $phi <= 0$:
+    1. Move the object's reference frame $ bold(v)_"rel" = bold(v) - bold(v)_"co" $ where $bold(v)_"co"$ is the collision object's velocity at this point
+    2. Split into normal and tangential parts $ v_n = bold(v)_"rel" dot bold(n), space.quad bold(v)_t = bold(v)_"rel" - v_n bold(n) $ where $bold(n)$ is the outwrd unit normal ($= nabla phi$)
+    3. If $v_n >= 0$ the bodies are separating, so apply no response, leaving $bold(v)$ untouched
+    4. Otherwise apply Coulomb friction: $ bold(v')_"rel" = cases(0 & "if" ||bold(v)_t|| <= mu v_n, bold(v)_t + mu v_n bold(v)_t / (||bold(v)_t ||) & "otherwise" ) $
+  - For surfaces where snow should stick, set $v'_"rel" = 0$ unconditionally if the surface is marked as sticky
 
 6. Implicitly solve for the end-of-step grid velocities (or skip for explicit)
   - Solve the system $ sum_j (I delta_bold(i j) + beta delta t^2 m_bold(i)^(-1) (partial^2 Phi^n)/(partial hat(bold(x))_bold(j) partial hat(bold(x))_bold(j))) bold(v_j)^(n + 1) = bold(v_i)^star \ delta_bold(i j) = cases(1 & "if" i = j, 0 & "otherwise") \ beta = cases(0 & "for explicit integration", 1/2 & "for trapezoidal integration", 1 & "for backwards Euler") $ // TODO: desgranar con cosas en Part IV Section 4.4
 7. Update deformation gradients on particles from the new grid velocity field, applying the pastic yield (SVD clamp)
   - The new grid velocity field is defined for each particle as $ nabla bold(v)_p^(n+1) = sum_i bold(v_i)^(n+1) (nabla w_(bold(i)p)^(n))^T $ where $sum_i$ iterates over the particle's support, $bold(v_i)^(n+1)$ is the new velocity calculated in step 4 if explicit or in step 6 for implicit, and $(nabla w^n_(bold(i)p))^T$ is the transpose (row 3-vector) of the weight gradient between node $bold(i)$ and particle $p$
   - Then we calculate the total deformation gradient with $ bold(F)^(n+1)_p = (I + Delta t nabla bold(v)_p^(n+1)) bold(F)_p^n $
-  - We need to define still the split of $bold(F)^(n+1)_p$ between $F_E$ and $F_P$ // TODO: Part III, section 3.4
+  - Then we separate $F_p^(n+1)$ into $F_(P p)^(n+1)$ and $F_(E p)^(n+1)$ with the following process
+    1. Tentatively define $ bold(hat(F))_(E p)^(n+1) = (I + Delta t nabla bold(v)_p^(n+1)) bold(F)_(E p)^n space.quad "and" space.quad bold(hat(F))_(P p)^(n+1) = bold(F)_(P p)^n $ such that the total gradient is defined by $ bold(F)_p^(n+1) = (I + Delta t nabla bold(v)_p^(n+1)) bold(F)_(E p)^n bold(F)_(P p)^n = bold(hat(F))_(E p)^(n+1) bold(hat(F))_(P p)^(n+1) $
+    2. Enforce yield by clamping, first by computing the SVD of the tentative elastic part with $ bold(hat(F))_(E p)^(n+1) = U_p hat(Sigma)_p V_p^T $ then by clamping the singular values with $ Sigma_p = op("clamp")(hat(Sigma)_p, [1 - theta_c, 1 + theta+p]) $
+    3. Reassemble the final elastic and plastic parts with $ F_(E p)^(n+1) = U_p Sigma_p V_p^T space.quad "and" space.quad F_(P p)^(n+1) = V_p Sigma_p^(-1) U_p^T F_p^(n+1) $
 8. Update particle velocities with PIC/FLIP blend (G2P)
   - $ bold(v)_p^(n+1) = (1 - alpha) bold(v)_("PIC"p)^(n+1) + alpha bold(v)_("FLIP"p)^(n+1) \ bold(v)_("PIC"p)^(n+1) = sum_i bold(v)_bold(i)^(n+1) w_(bold(i)p)^n \ bold(v)_("FLIP"p)^(n+1) = bold(v)_p^n + sum_i (bold(v)_bold(i)^(n+1) - bold(v)_bold(i)^n) w_(bold(i)p)^n $
 
@@ -152,88 +158,88 @@ We are back to Lagrangian space
 
 11. Clear the grid and start the next step
 
-#pagebreak()
-#set page(margin: 1cm, paper: "a2")
+// #pagebreak()
+// #set page(margin: 1cm, paper: "a2")
 
-#let crit_comp = $theta_c$
-#let crit_stre = $theta_s$
-#let hard_coeff = $xi$
-#let initial_density = $rho_0$
-#let initial_young = $E_0$
-#let poisson = $nu$
+// #let crit_comp = $theta_c$
+// #let crit_stre = $theta_s$
+// #let hard_coeff = $xi$
+// #let initial_density = $rho_0$
+// #let initial_young = $E_0$
+// #let poisson = $nu$
 
-#let par_pos = $bold(x)_p$
-#let par_vel = $bold(v)_p$
-#let par_FE = $F_(E p)$
-#let par_FP = $F_(P p)$
-#let par_mass = $m_p$
-#let par_vol_initial = $V_p^0$
+// #let par_pos = $bold(x)_p$
+// #let par_vel = $bold(v)_p$
+// #let par_FE = $F_(E p)$
+// #let par_FP = $F_(P p)$
+// #let par_mass = $m_p$
+// #let par_vol_initial = $V_p^0$
 
-#diagram(
-  spacing: 2.5mm,
-  {
-    // User-facing variables
-    node((0,0), crit_comp, name: <crit_comp>)
-    node((0,1), crit_stre, name: <crit_stre>)
-    node((0,2), hard_coeff, name: <hard_coeff>)
-    node((0,3), initial_density, name: <initial_density>)
-    node((0,4), initial_young, name: <initial_young>)
-    node((0,5), poisson, name: <poisson>)
-    node(enclose: (<crit_comp>, <poisson>), stroke: teal, inset: 10pt, snap: false)
+// #diagram(
+//   spacing: 2.5mm,
+//   {
+//     // User-facing variables
+//     node((0,0), crit_comp, name: <crit_comp>)
+//     node((0,1), crit_stre, name: <crit_stre>)
+//     node((0,2), hard_coeff, name: <hard_coeff>)
+//     node((0,3), initial_density, name: <initial_density>)
+//     node((0,4), initial_young, name: <initial_young>)
+//     node((0,5), poisson, name: <poisson>)
+//     node(enclose: (<crit_comp>, <poisson>), stroke: teal, inset: 10pt, snap: false)
 
-    // Particle state
-    node((0,7), par_pos, name: <par_pos>)
-    node((0,8), par_vel, name: <par_vel>)
-    node((0,9), par_FE, name: <par_FE>)
-    node((0,10), par_FP, name: <par_FP>)
-    node((0,11), par_mass, name: <par_mass>)
-    node((0,12), par_vol_initial, name: <par_vol_initial>)
-    node(enclose: (<par_pos>, <par_vol_initial>), stroke: blue, inset: 10pt, snap: false)
+//     // Particle state
+//     node((0,7), par_pos, name: <par_pos>)
+//     node((0,8), par_vel, name: <par_vel>)
+//     node((0,9), par_FE, name: <par_FE>)
+//     node((0,10), par_FP, name: <par_FP>)
+//     node((0,11), par_mass, name: <par_mass>)
+//     node((0,12), par_vol_initial, name: <par_vol_initial>)
+//     node(enclose: (<par_pos>, <par_vol_initial>), stroke: blue, inset: 10pt, snap: false)
     
 
-    // Steps
-    node((5, 1), circle(fill: black, radius: 2.5mm), outset: -3mm, name: <start>) // Start node
+//     // Steps
+//     node((5, 1), circle(fill: black, radius: 2.5mm), outset: -3mm, name: <start>) // Start node
     
-    // Step 0
-    node($N(x) = cases(
-      1/2 abs(x)^3 - x^2 + 2/3 & "if" 0 <= abs(x) < 1,
-      -1/6 abs(x)^3 + x^2 -2 abs(x) + 4/3 & "if" 1 <= abs(x) < 2,
-      0 & "otherwise"
-    )$)
+//     // Step 0
+//     node($N(x) = cases(
+//       1/2 abs(x)^3 - x^2 + 2/3 & "if" 0 <= abs(x) < 1,
+//       -1/6 abs(x)^3 + x^2 -2 abs(x) + 4/3 & "if" 1 <= abs(x) < 2,
+//       0 & "otherwise"
+//     )$)
 
-    // Step 1
-    node((5, 3), $ m_bold(i)^n = sum_p m_p w_(bold(i)p)^n $, name: <step-1-mass>)
-    edge(<par_mass>, <step-1-mass>, stroke: luma(150))
-    node((5, 4), $ bold(v)_bold(i)^n = (sum_p bold(v_p^n) m_p w_(bold(i) p)^n) / m_bold(i)^n $, name: <step-1-vel>)
-    node(enclose: (<step-1-mass>, <step-1-vel>), stroke: luma(50%), align(left + top)[#text(fill: luma(50%))[1]], name: <step-1>)
-    edge(<start>, <step-1>, "->")
-    edge("->")
-    node((40, 2), "Step 2", name: <step-2>)
-    edge("->")
-    node((40, 3), "Step 3", name: <step-3>)
-    edge("->")
-    node((40, 4), "Step 4", name: <step-4>)
-    edge("->")
-    node((40, 5), "Step 5", name: <step-5>)
-    edge("->")
-    node((40, 6), "Step 6", name: <step-6>)
-    edge("->")
-    node((40, 7), "Step 7", name: <step-7>)
-    edge("->")
-    node((40, 8), "Step 8", name: <step-8>)
-    edge("->")
-    node((5, 8), "Step 9", name: <step-9>)
-    edge("->")
-    node((5, 7), "Step 10", name: <step-10>)
-    edge("->")
-    node((5, 6), "Step 11", name: <step-11>)
-    edge(<step-11.north>, <step-1.south>, "->")
+//     // Step 1
+//     node((5, 3), $ m_bold(i)^n = sum_p m_p w_(bold(i)p)^n $, name: <step-1-mass>)
+//     edge(<par_mass>, <step-1-mass>, stroke: luma(150))
+//     node((5, 4), $ bold(v)_bold(i)^n = (sum_p bold(v_p^n) m_p w_(bold(i) p)^n) / m_bold(i)^n $, name: <step-1-vel>)
+//     node(enclose: (<step-1-mass>, <step-1-vel>), stroke: luma(50%), align(left + top)[#text(fill: luma(50%))[1]], name: <step-1>)
+//     edge(<start>, <step-1>, "->")
+//     edge("->")
+//     node((40, 2), "Step 2", name: <step-2>)
+//     edge("->")
+//     node((40, 3), "Step 3", name: <step-3>)
+//     edge("->")
+//     node((40, 4), "Step 4", name: <step-4>)
+//     edge("->")
+//     node((40, 5), "Step 5", name: <step-5>)
+//     edge("->")
+//     node((40, 6), "Step 6", name: <step-6>)
+//     edge("->")
+//     node((40, 7), "Step 7", name: <step-7>)
+//     edge("->")
+//     node((40, 8), "Step 8", name: <step-8>)
+//     edge("->")
+//     node((5, 8), "Step 9", name: <step-9>)
+//     edge("->")
+//     node((5, 7), "Step 10", name: <step-10>)
+//     edge("->")
+//     node((5, 6), "Step 11", name: <step-11>)
+//     edge(<step-11.north>, <step-1.south>, "->")
 
-    // Spaces
-    node(enclose: (<step-1>, <step-9>), stroke: red, inset: 10pt, snap: false, align(bottom+left)[Lagrangian space])
-    node(enclose: (<step-2>, <step-8>), stroke: green, inset: 10pt, snap: false, align(bottom+left)[Eulerian space])
-  }
-)
+//     // Spaces
+//     node(enclose: (<step-1>, <step-9>), stroke: red, inset: 10pt, snap: false, align(bottom+left)[Lagrangian space])
+//     node(enclose: (<step-2>, <step-8>), stroke: green, inset: 10pt, snap: false, align(bottom+left)[Eulerian space])
+//   }
+// )
 
 
 

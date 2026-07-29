@@ -9,4 +9,8 @@
     <orderEntry type="module" module-name="canny" exported="" />
     <orderEntry type="jdk" jdkName="uv (tfm) (2)" jdkType="Python SDK" />
   </component>
+  <component name="PyDocumentationSettings">
+    <option name="format" value="GOOGLE" />
+    <option name="myDocStringFormat" value="Google" />
+  </component>
 </module>

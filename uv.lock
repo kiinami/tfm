@@ -5,6 +5,7 @@ requires-python = ">=3.14"
 [manifest]
 members = [
     "canny",
+    "mpm-explicit",
     "tfm",
 ]
 
@@ -24,6 +25,17 @@ requires-dist = [
     { name = "pillow", specifier = ">=12.3.0" },
     { name = "warp-lang", specifier = ">=1.15.0" },
 ]
+
+[[package]]
+name = "mpm-explicit"
+version = "0.1.0"
+source = { editable = "src/mpm-explicit" }
+dependencies = [
+    { name = "warp-lang" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "warp-lang", specifier = ">=1.15.0" }]
 
 [[package]]
 name = "numpy"
