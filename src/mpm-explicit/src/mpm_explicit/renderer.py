@@ -1,13 +1,19 @@
 import numpy as np
 import rerun as rr
 
+from mpm_explicit.grid import Grid
 
-def init(min_coord: list[float], max_coord: list[float]):
+
+def init(grid: Grid):
     rr.init("mpm", spawn=True)
-    rr.log("world/box", rr.Boxes3D(centers=[
-        [(min_coord[0] + max_coord[0]) / 2, (min_coord[1] + max_coord[1]) / 2, (min_coord[2] + max_coord[2]) / 2]],
-        half_sizes=[[(max_coord[0] - min_coord[0]) / 2, (max_coord[1] - min_coord[1]) / 2,
-                     (max_coord[2] - min_coord[2]) / 2]]), static=True)
+    rr.log(
+        "world/box",
+        rr.Boxes3D(
+            centers=[grid.center()],
+            half_sizes=[grid.half_dimensions()]
+        ),
+        static=True
+    )
 
 
 def render(step: int, positions: np.ndarray):

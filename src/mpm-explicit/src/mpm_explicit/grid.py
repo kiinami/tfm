@@ -41,6 +41,16 @@ class Grid:
             inputs=[self],
         )
 
+    def center(self) -> wp.vec3:
+        return (self.min_coord + self.max_coord) * 0.5
+
+    def half_dimensions(self) -> wp.vec3:
+        return wp.vec3(
+            float(self.dimensions[0]) * 0.5,
+            float(self.dimensions[1]) * 0.5,
+            float(self.dimensions[2]) * 0.5,
+        )
+
 
 @wp.kernel
 def k_fill_grid_constants(grid: Grid):

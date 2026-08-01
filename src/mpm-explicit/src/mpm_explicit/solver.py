@@ -2,7 +2,7 @@ import numpy as np
 import warp as wp
 
 from mpm_explicit.grid import Grid
-from mpm_explicit.particles import Particles, Particle
+from mpm_explicit.particles import Particles
 from mpm_explicit.utils import bspline_w
 
 
@@ -10,11 +10,13 @@ class Solver:
     grid: Grid
     particles: Particles
 
-    def __init__(self, min_coord: wp.vec3, max_coord: wp.vec3, dimensions: wp.vec3ui, particles: Particles):
-        self.grid = Grid()
-        self.grid.init(min_coord, max_coord, dimensions)
+    dt: float
 
+
+    def __init__(self, grid: Grid, particles: Particles, dt: float = 0.001):
+        self.grid = grid
         self.particles = particles
+        self.dt = dt
 
     def update(self):
         self.p2g()
