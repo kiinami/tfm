@@ -30,7 +30,7 @@ def main():
     for step in range(10):
         solver.update()
 
-        rd.render(step, solver.particles.positions.numpy())
+        rd.render(solver.t, solver.particles.positions.numpy())
 
 
 if __name__ == "__main__":

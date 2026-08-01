@@ -16,6 +16,6 @@ def init(grid: Grid):
     )
 
 
-def render(step: int, positions: np.ndarray):
-    rr.set_time("step", sequence=step)
+def render(t: float, positions: np.ndarray):
+    rr.set_time("step", timestamp=t)
     rr.log("world/particles", rr.Points3D(positions=positions))
