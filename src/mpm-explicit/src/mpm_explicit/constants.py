@@ -1,5 +1,6 @@
 import warp as wp
 
+DEFAULT_DT = 0.0001
 DEFAULT_CRITICAL_COMPRESSION = wp.constant(2.5e-2)
 DEFAULT_CRITICAL_STRETCH = wp.constant(7.5e-3)
 DEFAULT_HARDENING_COEFFICIENT = wp.constant(10)

@@ -8,6 +8,7 @@ authors = [
 ]
 requires-python = ">=3.14"
 dependencies = [
+    "rerun-sdk>=0.35.0",
     "warp-lang>=1.15.0",
 ]
 
