@@ -133,7 +133,7 @@ We are now in Eulerian space
   - Calculate the function $phi(bold(x))$ for each node for each scripted object, it being the signed distance from point $bold(x)$ to the object's surface
   - Given the velocity $bold(v)$ to be collided at a point where $phi <= 0$:
     1. Move the object's reference frame $ bold(v)_"rel" = bold(v) - bold(v)_"co" $ where $bold(v)_"co"$ is the collision object's velocity at this point
-    2. Split into normal and tangential parts $ v_n = bold(v)_"rel" dot bold(n), space.quad bold(v)_t = bold(v)_"rel" - v_n bold(n) $ where $bold(n)$ is the outwrd unit normal ($= nabla phi$)
+    2. Split into normal and tangential parts $ v_n = bold(v)_"rel" dot bold(n), space.quad bold(v)_t = bold(v)_"rel" - v_n bold(n) $ where $bold(n)$ is the outward unit normal ($= nabla phi$)
     3. If $v_n >= 0$ the bodies are separating, so apply no response, leaving $bold(v)$ untouched
     4. Otherwise apply Coulomb friction: $ bold(v')_"rel" = cases(0 & "if" ||bold(v)_t|| <= mu v_n, bold(v)_t + mu v_n bold(v)_t / (||bold(v)_t ||) & "otherwise" ) $
   - For surfaces where snow should stick, set $v'_"rel" = 0$ unconditionally if the surface is marked as sticky
@@ -145,7 +145,7 @@ We are now in Eulerian space
   - Then we calculate the total deformation gradient with $ bold(F)^(n+1)_p = (I + Delta t nabla bold(v)_p^(n+1)) bold(F)_p^n $
   - Then we separate $F_p^(n+1)$ into $F_(P p)^(n+1)$ and $F_(E p)^(n+1)$ with the following process
     1. Tentatively define $ bold(hat(F))_(E p)^(n+1) = (I + Delta t nabla bold(v)_p^(n+1)) bold(F)_(E p)^n space.quad "and" space.quad bold(hat(F))_(P p)^(n+1) = bold(F)_(P p)^n $ such that the total gradient is defined by $ bold(F)_p^(n+1) = (I + Delta t nabla bold(v)_p^(n+1)) bold(F)_(E p)^n bold(F)_(P p)^n = bold(hat(F))_(E p)^(n+1) bold(hat(F))_(P p)^(n+1) $
-    2. Enforce yield by clamping, first by computing the SVD of the tentative elastic part with $ bold(hat(F))_(E p)^(n+1) = U_p hat(Sigma)_p V_p^T $ then by clamping the singular values with $ Sigma_p = op("clamp")(hat(Sigma)_p, [1 - theta_c, 1 + theta+p]) $
+    2. Enforce yield by clamping, first by computing the SVD of the tentative elastic part with $ bold(hat(F))_(E p)^(n+1) = U_p hat(Sigma)_p V_p^T $ then by clamping the singular values with $ Sigma_p = op("clamp")(hat(Sigma)_p, [1 - theta_c, 1 + theta_s ]) $
     3. Reassemble the final elastic and plastic parts with $ F_(E p)^(n+1) = U_p Sigma_p V_p^T space.quad "and" space.quad F_(P p)^(n+1) = V_p Sigma_p^(-1) U_p^T F_p^(n+1) $
 8. Update particle velocities with PIC/FLIP blend (G2P)
   - $ bold(v)_p^(n+1) = (1 - alpha) bold(v)_("PIC"p)^(n+1) + alpha bold(v)_("FLIP"p)^(n+1) \ bold(v)_("PIC"p)^(n+1) = sum_i bold(v)_bold(i)^(n+1) w_(bold(i)p)^n \ bold(v)_("FLIP"p)^(n+1) = bold(v)_p^n + sum_i (bold(v)_bold(i)^(n+1) - bold(v)_bold(i)^n) w_(bold(i)p)^n $

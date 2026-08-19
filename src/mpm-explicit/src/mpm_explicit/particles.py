@@ -44,8 +44,8 @@ class Particles:
     critical_compressions: wp.array[float]
     critical_stretches: wp.array[float]
     hardening_coefs: wp.array[float]
-    initial_young_moduli: wp.array[float]
-    poisson_ratios: wp.array[float]
+    mus: wp.array[float]
+    lambdas: wp.array[float]
 
     positions: wp.array[wp.vec3]
     velocities: wp.array[wp.vec3]
@@ -58,8 +58,8 @@ class Particles:
         self.critical_compressions = wp.empty(shape=i, dtype=wp.float32, device="cuda")
         self.critical_stretches = wp.empty(shape=i, dtype=wp.float32, device="cuda")
         self.hardening_coefs = wp.empty(shape=i, dtype=wp.float32, device="cuda")
-        self.initial_young_moduli = wp.empty(shape=i, dtype=wp.float32, device="cuda")
-        self.poisson_ratios = wp.empty(shape=i, dtype=wp.float32, device="cuda")
+        self.mus = wp.empty(shape=i, dtype=wp.float32, device="cuda")
+        self.lambdas = wp.empty(shape=i, dtype=wp.float32, device="cuda")
         self.positions = wp.empty(shape=i, dtype=wp.vec3, device="cuda")
         self.velocities = wp.empty(shape=i, dtype=wp.vec3, device="cuda")
         self.elastic_deformations = wp.empty(shape=i, dtype=wp.mat33, device="cuda")
@@ -100,8 +100,8 @@ class Particles:
         self.critical_compressions.fill_(critical_compression)
         self.critical_stretches.fill_(critical_stretch)
         self.hardening_coefs.fill_(hardening_coef)
-        self.initial_young_moduli.fill_(young_modulus)
-        self.poisson_ratios.fill_(poisson_ratio)
+        self.mus.fill_(young_modulus / (2.0 * (1.0 + poisson_ratio)))
+        self.lambdas.fill_(young_modulus * poisson_ratio / ((1.0 + poisson_ratio) * (1.0 - 2.0 * poisson_ratio)))
 
         self.velocities.zero_()
         self.elastic_deformations.fill_(wp.mat33(1.0))
@@ -127,8 +127,8 @@ def k_fill_particles(plist: wp.array[Particle], particles: Particles):
     particles.critical_compressions[i] = p.critical_compression
     particles.critical_stretches[i] = p.critical_stretch
     particles.hardening_coefs[i] = p.hardening_coef
-    particles.initial_young_moduli[i] = p.initial_young_modulus
-    particles.poisson_ratios[i] = p.poisson_ratio
+    particles.mus[i] = p.initial_young_modulus / (2.0 * (1.0 + p.poisson_ratio))
+    particles.lambdas[i] = p.initial_young_modulus * p.poisson_ratio / ((1.0 + p.poisson_ratio) * (1.0 - 2.0 * p.poisson_ratio))
     particles.positions[i] = p.position
     particles.velocities[i] = p.velocity
     particles.elastic_deformations[i] = p.elastic_deformation
@@ -153,3 +153,15 @@ def k_sample_cube(
     cell_origin = min_coord + wp.vec3(float(i) * cell_size[0], float(j) * cell_size[1], float(k) * cell_size[2])
 
     positions[idx] = cell_origin + jitter
+
+
+@wp.func
+def mu_(plastic_deformation: wp.mat33, hardening_coef: float, initial_mu: float) -> float:
+    Jp = wp.determinant(plastic_deformation)
+    return initial_mu * wp.exp(hardening_coef * (1.0 - Jp))
+
+
+@wp.func
+def lambda_(plastic_deformation: wp.mat33, hardening_coef: float, initial_lambda: float) -> float:
+    Jp = wp.determinant(plastic_deformation)
+    return initial_lambda * wp.exp(hardening_coef * (1.0 - Jp))

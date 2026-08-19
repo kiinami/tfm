@@ -1,12 +1,22 @@
 import warp as wp
+from rich.progress import track
 
 import mpm_explicit.renderer as rd
+from mpm_explicit.boundaries import PlaneBoundary
 from mpm_explicit.grid import Grid
 from mpm_explicit.particles import Particles
 from mpm_explicit.solver import Solver
 
 
+DURATION = 5.0
+FPS = 30
+DT = 0.00001
+
+
 def main():
+    print("Initializing warp and compiling kernels")
+    wp.init()
+
     grid = Grid()
     grid.init(
         min_coord=wp.vec3(0, 0, 0),
@@ -23,14 +33,24 @@ def main():
         seed=42
     )
 
-    solver = Solver(grid, particles)
+    plane = PlaneBoundary()
+    plane.point = wp.vec3(0, 0, 0)
+    plane.normal = wp.vec3(0, 0, 1)
 
-    rd.init(grid)
+    solver = Solver(grid, particles, plane, DT)
 
-    for step in range(10):
+    rd.init(grid, plane)
+    rd.render(solver.t, solver.particles.positions.numpy())
+
+    total_steps = int(round(DURATION / DT))
+    frame_duration = 1.0 / FPS
+    next_frame_time = 0.0
+    for _ in track(range(total_steps), description="Running simulation steps..."):
         solver.update()
-
-        rd.render(solver.t, solver.particles.positions.numpy())
+        if solver.t >= next_frame_time:
+            rd.render(solver.t, solver.particles.positions.numpy())
+            next_frame_time += frame_duration
+        solver.advance()
 
 
 if __name__ == "__main__":
