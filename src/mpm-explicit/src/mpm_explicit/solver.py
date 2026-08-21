@@ -1,12 +1,12 @@
-import warp as wp
-from nvtx import nvtx
-from warp.examples.fem.example_burgers import velocity_norm
+from functools import cached_property
 
-from mpm_explicit.boundaries import PlaneBoundary, signed_distance
-from mpm_explicit.constants import COULOMB_FRICTION, GRAVITY, PICFLIP_ALPHA, MASS_EPSILON, DEFAULT_DT
-from mpm_explicit.grid import Grid, flatten, unflatten
+import warp as wp
+
+from mpm_explicit.constants import COULOMB_FRICTION, GRAVITY, PICFLIP_ALPHA, EPSILON, DEFAULT_DT, \
+    MAX_COLLISION_DIST
+from mpm_explicit.grid import Grid, grid_index_to_coord
 from mpm_explicit.particles import Particles, lambda_, mu_
-from mpm_explicit.utils import bspline_dw, bspline_w, extract_rotation
+from mpm_explicit.utils import bspline_dw, bspline_w, extract_rotation, cofactor, safe_svd3
 
 
 @wp.struct
@@ -32,124 +32,150 @@ class Weights:
 class Solver:
     grid: Grid
     particles: Particles
-    boundary: PlaneBoundary
+    obstacles: list[wp.Mesh]
 
     dt: float
     t: float = 0
 
     _weights: Weights
-    _first: bool
+    _initial_densities: wp.array[float]
 
-    def __init__(self, grid: Grid, particles: Particles, boundary: PlaneBoundary, dt: float = DEFAULT_DT):
+    _active_flags: wp.array[int]
+    _active_offsets: wp.array[int]
+    _active_nodes: wp.array[wp.vec3i]
+    _active_count: wp.array[int]
+
+    _first: wp.array[int]
+    _graph: wp.Graph
+
+    def __init__(self, grid: Grid, particles: Particles, obstacles: list[wp.Mesh], dt: float = DEFAULT_DT):
         self.grid = grid
         self.particles = particles
-        self.boundary = boundary
+        self.obstacles = obstacles
         self.dt = dt
 
         self._weights = Weights()
         self._weights.init(len(particles))
-        self._first = True
+        self._first = wp.zeros(1, dtype=int)
+        self._first.fill_(1)
+        self._initial_densities = wp.zeros(shape=len(self.particles), dtype=float, device="cuda")
 
-    def update(self):
-        with wp.ScopedTimer(f"Step at t={self.t:05}", synchronize=True, use_nvtx=True):
-            self.p2g()
-            self.update_nodes()
-            self.g2p()
-            self.update_particles()
-            self.clear()
+        flat_size = self.grid.flat_dimensions
+        self._active_flags = wp.zeros(shape=flat_size, dtype=wp.int32, device="cuda")
+        self._active_offsets = wp.zeros(shape=flat_size, dtype=wp.int32, device="cuda")
+        self._active_nodes = wp.zeros(shape=flat_size, dtype=wp.vec3i, device="cuda")
+        self._active_count = wp.zeros(shape=1, dtype=wp.int32, device="cuda")
 
-    def advance(self):
-        self.t += self.dt
+        self._graph = self._capture_graph()
 
-    def p2g(self):
-        wp.launch(
-            kernel=k_compute_weights,
-            dim=len(self.particles),
-            inputs=[self.particles, self.grid, self._weights]
-        )
+    @cached_property
+    def obstacle_ids(self) -> wp.array[wp.uint64]:
+        return wp.array([obs.id for obs in self.obstacles], dtype=wp.uint64)
 
-        wp.launch(
-            kernel=k_p2g,
-            dim=len(self.particles),
-            inputs=[self.particles, self.grid, self._weights]
-        )
-
-        wp.launch(
-            kernel=k_normalize_grid,
-            dim=self.grid.dimensions,
-            inputs=[self.grid]
-        )
-
-        wp.utils.array_scan(self.grid.is_active, self.grid.offsets, inclusive=False)
-
-        wp.launch(
-            kernel=k_compact_active_nodes,
-            dim=self.grid.flat_dimensions,
-            inputs=[self.grid]
-        )
-
-    def update_nodes(self):
-        if self._first:
-            self._first = False
-            initial_densities: wp.array[float] = wp.zeros(shape=len(self.particles), dtype=float, device="cuda")
-
+    def _capture_graph(self):
+        with wp.ScopedCapture(device="cuda", capture_mode=wp.CaptureMode.RELAXED) as first_capture:
             wp.launch(
                 kernel=k_calculate_initial_density,
                 dim=len(self.particles),
-                inputs=[self.grid, self._weights, initial_densities]
+                inputs=[self.grid, self._weights, self._initial_densities]
             )
 
             wp.launch(
                 kernel=k_set_initial_volumes,
                 dim=len(self.particles),
-                inputs=[self.particles, initial_densities]
+                inputs=[self.particles, self._initial_densities]
             )
 
-        wp.launch(
-            kernel=k_calculate_forces,
-            dim=len(self.particles),
-            inputs=[self.grid, self._weights, self.particles]
-        )
+            self._first.fill_(0)
 
-        wp.launch(
-            kernel=k_update_grid,
-            dim=self.grid.active_node_count,
-            inputs=[self.grid, self.dt]
-        )
+        with wp.ScopedCapture(device="cuda", capture_mode=wp.CaptureMode.RELAXED) as capture:
+            # p2g
+            wp.launch(
+                kernel=k_compute_weights,
+                dim=len(self.particles),
+                inputs=[self.particles, self.grid, self._weights]
+            )
 
-        wp.launch(
-            kernel=k_calculate_grid_collisions,
-            dim=self.grid.active_node_count,
-            inputs=[self.grid, self.boundary]
-        )
+            wp.launch(
+                kernel=k_p2g,
+                dim=len(self.particles),
+                inputs=[self.particles, self.grid, self._weights]
+            )
 
-        wp.launch(
-            kernel=k_update_deformations,
-            dim=len(self.particles),
-            inputs=[self.particles, self.grid, self._weights, self.dt]
-        )
+            wp.launch(
+                kernel=k_normalize_grid,
+                dim=self.grid.dimensions,
+                inputs=[self.grid, self._active_flags]
+            )
 
-    def g2p(self):
-        wp.launch(
-            kernel=k_g2p,
-            dim=len(self.particles),
-            inputs=[self.particles, self.grid, self._weights, self.dt]
-        )
+            wp.utils.array_scan(self._active_flags, self._active_offsets, inclusive=False)
 
-    def update_particles(self):
-        wp.launch(
-            kernel=k_calculate_particle_collisions,
-            dim=len(self.particles),
-            inputs=[self.particles, self.boundary]
-        )
-        wp.launch(
-            kernel=k_advect_particle_positions,
-            dim=len(self.particles),
-            inputs=[self.particles, self.dt]
-        )
+            wp.launch(
+                kernel=k_collect_active_nodes,
+                dim=self.grid.flat_dimensions,
+                inputs=[
+                    self.grid,
+                    self._active_flags,
+                    self._active_offsets,
+                    self._active_nodes,
+                    self._active_count,
+                ]
+            )
 
-    def clear(self):
-        self.grid.clear()
+            # update nodes
+            wp.capture_if(self._first, first_capture.graph)
+
+            wp.launch(
+                kernel=k_calculate_forces,
+                dim=len(self.particles),
+                inputs=[self.grid, self._weights, self.particles]
+            )
+
+            wp.launch(
+                kernel=k_update_grid,
+                dim=self.grid.dimensions,
+                inputs=[self.grid, self._active_nodes, self._active_count, self.dt]
+            )
+
+            wp.launch(
+                kernel=k_calculate_grid_collisions,
+                dim=self.grid.dimensions,
+                inputs=[self.grid, self._active_nodes, self._active_count, self.obstacle_ids, self.dt]
+            )
+
+            wp.launch(
+                kernel=k_update_deformations,
+                dim=len(self.particles),
+                inputs=[self.particles, self.grid, self._weights, self.dt]
+            )
+
+            # g2p
+            wp.launch(
+                kernel=k_g2p,
+                dim=len(self.particles),
+                inputs=[self.particles, self.grid, self._weights, self.dt]
+            )
+
+            # update particles
+            wp.launch(
+                kernel=k_calculate_particle_collisions,
+                dim=len(self.particles),
+                inputs=[self.particles, self.obstacle_ids, self.dt]
+            )
+            wp.launch(
+                kernel=k_advect_particle_positions,
+                dim=len(self.particles),
+                inputs=[self.particles, self.dt]
+            )
+
+            # clear
+            self.grid.clear()
+
+        return capture.graph
+
+    def update(self):
+        wp.capture_launch(self._graph)
+        self.t += self.dt
 
 
 @wp.kernel
@@ -223,30 +249,54 @@ def k_p2g(particles: Particles, grid: Grid, weights: Weights):
 
                 weight = wx[di] * wy[dj] * wz[dk]
 
-                grid.masses[i, j, k] += weight * mass
-                grid.velocities[i, j, k] += weight * mass * velocity
+                wp.atomic_add(grid.masses, i, j, k, weight * mass)
+                wp.atomic_add(grid.velocities, i, j, k, weight * mass * velocity)
 
 
 @wp.kernel
-def k_normalize_grid(grid: Grid):
+def k_normalize_grid(
+    grid: Grid,
+    active_flags: wp.array[int]
+):
     i, j, k = wp.tid()
 
     mass = grid.masses[i, j, k]
+    flat_idx = (i * grid.dimensions[1] + j) * grid.dimensions[2] + k
 
-    if mass > MASS_EPSILON:
+    if mass > EPSILON:
         grid.velocities[i, j, k] = grid.velocities[i, j, k] / mass
-        grid.is_active[flatten(grid.dimensions, i, j, k)] = 1
+        active_flags[flat_idx] = 1
     else:
         grid.velocities[i, j, k] = wp.vec3(0.0, 0.0, 0.0)
+        active_flags[flat_idx] = 0
 
 
 @wp.kernel
-def k_compact_active_nodes(grid: Grid):
-    idx = wp.tid()
+def k_collect_active_nodes(
+        grid: Grid,
+        active_flags: wp.array[int],
+        active_offsets: wp.array[int],
+        active_nodes: wp.array[wp.vec3i],
+        active_count: wp.array[int],
+):
+    flat_idx = wp.tid()
+    dim_x = grid.dimensions[0]
+    dim_y = grid.dimensions[1]
+    dim_z = grid.dimensions[2]
+    total_elements = dim_x * dim_y * dim_z
 
-    if grid.is_active[idx]:
-        slot = grid.offsets[idx]
-        grid.active_nodes[slot] = idx
+    if active_flags[flat_idx] == 1:
+        offset = active_offsets[flat_idx]
+
+        i = flat_idx // (dim_y * dim_z)
+        rem = flat_idx % (dim_y * dim_z)
+        j = rem // dim_z
+        k = rem % dim_z
+
+        active_nodes[offset] = wp.vec3i(i, j, k)
+
+    if flat_idx == total_elements - 1:
+        active_count[0] = active_offsets[flat_idx] + active_flags[flat_idx]
 
 
 @wp.kernel
@@ -310,7 +360,7 @@ def k_calculate_forces(grid: Grid, weights: Weights, particles: Particles):
 
     V_0 = particles.volumes[p]
 
-    pk_stress = 2.0 * mu * (F_Ep - R_Ep) + lmbd * (J_Ep - 1.0) * J_Ep * wp.inverse(wp.transpose(F_Ep))
+    pk_stress = 2.0 * mu * (F_Ep - R_Ep) + lmbd * (J_Ep - 1.0) * cofactor(F_Ep)
     force = -1.0 * (V_0 * pk_stress @ wp.transpose(F_Ep))
 
     for dk in range(4):
@@ -331,58 +381,88 @@ def k_calculate_forces(grid: Grid, weights: Weights, particles: Particles):
                     wx[di] * wy[dj] * dwz[dk],
                 )
 
-                grid.forces[i, j, k] += force @ grad_weight
+                wp.atomic_add(grid.forces, i, j, k, force @ grad_weight)
 
 
 @wp.kernel
-def k_update_grid(grid: Grid, dt: float):
-    idx = wp.tid()
-    node = unflatten(grid.dimensions, idx)
-    i = node[0]
-    j = node[1]
-    k = node[2]
-
-    mass = grid.masses[i, j, k]
-    if mass <= 0.0:
+def k_update_grid(
+    grid: Grid,
+    active_nodes: wp.array[wp.vec3i],
+    active_count: wp.array[int],
+    dt: float
+):
+    active_id = wp.tid()
+    if active_id >= active_count[0]:
         return
 
-    # existing momentum -> velocity conversion
+    # Look up original 3D indices
+    i, j, k = active_nodes[active_id]
+
+    mass = grid.masses[i, j, k]
     vel = grid.velocities[i, j, k]
 
-    # elastic force
+    # Elastic force
     vel += dt * grid.forces[i, j, k] / mass
 
-    # gravity
+    # Gravity
     vel += dt * GRAVITY
 
     grid.new_velocities[i, j, k] = vel
 
 
 @wp.kernel
-def k_calculate_grid_collisions(grid: Grid, boundary: PlaneBoundary):
-    idx = wp.tid()
-    node = unflatten(grid.dimensions, idx)
-    i = node[0]
-    j = node[1]
-    k = node[2]
+def k_calculate_grid_collisions(
+    grid: Grid,
+    active_nodes: wp.array[wp.vec3i],
+    active_count: wp.array[int],
+    obstacles: wp.array[wp.uint64],
+    dt: float
+):
+    active_id = wp.tid()
+    if active_id >= active_count[0]:
+        return
 
-    position = grid.positions[i, j, k]
+    i, j, k = active_nodes[active_id]
+
+    position = grid_index_to_coord(grid, i, j, k)
     velocity = grid.new_velocities[i, j, k]
 
-    dist = signed_distance(boundary, position)
+    for b in range(obstacles.shape[0]):
+        test_position = position + dt * velocity
+        obs_id = obstacles[b]
 
-    if dist <= 0.0:
-        normal = boundary.normal
-        velocity_normal = wp.dot(velocity, normal)
-        velocity_tangent = velocity - velocity_normal * normal
+        query = wp.mesh_query_point_sign_normal(obs_id, test_position, MAX_COLLISION_DIST, EPSILON)
 
-        if velocity_normal > 0.0:
-            return
+        if query.result:
+            p = wp.mesh_eval_position(obs_id, query.face, query.u, query.v)
+            delta = test_position - p
+            dist = wp.length(delta) * query.sign
 
-        if wp.length(velocity_tangent) <= -COULOMB_FRICTION * velocity_normal:
-            grid.new_velocities[i, j, k] = wp.vec3(0.0)
-        else:
-            grid.new_velocities[i, j, k] =  velocity_tangent + COULOMB_FRICTION * velocity_normal * (velocity_tangent / wp.length(velocity_tangent))
+            if dist <= 0.0:
+                delta_len = wp.length(delta)
+
+                if delta_len > 1e-6:
+                    normal = (delta / delta_len) * query.sign
+                else:
+                    # Fallback if exactly on the face boundary: calculate normal from vertices
+                    v0 = wp.mesh_eval_position(obs_id, query.face, 0.0, 0.0)
+                    v1 = wp.mesh_eval_position(obs_id, query.face, 1.0, 0.0)
+                    v2 = wp.mesh_eval_position(obs_id, query.face, 0.0, 1.0)
+                    normal = wp.normalize(wp.cross(v1 - v0, v2 - v0))
+
+                velocity_normal = wp.dot(velocity, normal)
+                velocity_tangent = velocity - velocity_normal * normal
+
+                if velocity_normal > 0.0:
+                    continue
+
+                if wp.length(velocity_tangent) <= -COULOMB_FRICTION * velocity_normal:
+                    velocity = wp.vec3(0.0, 0.0, 0.0)
+                else:
+                    velocity = velocity_tangent + COULOMB_FRICTION * velocity_normal * (
+                                velocity_tangent / wp.length(velocity_tangent))
+
+    grid.new_velocities[i, j, k] = velocity
 
 
 @wp.kernel
@@ -426,15 +506,11 @@ def k_update_deformations(particles: Particles, grid: Grid, weights: Weights, dt
                 velocity_gradient += wp.outer(new_velocity, grad_weight)
 
     I = wp.identity(3, dtype=wp.float32)
-    F_Ep_tentative = (I + dt * velocity_gradient) * F_Ep
+    F_Ep_tentative = (I + dt * velocity_gradient) @ F_Ep
     F_Pp_tentative = F_Pp
-    F_p = F_Ep_tentative * F_Pp_tentative
+    F_p = F_Ep_tentative @ F_Pp_tentative
 
-    U_p = wp.mat33(1.0)
-    V_p = wp.mat33(1.0)
-    sigma_p = wp.vec3(0.0)
-
-    wp.svd3(F_Ep_tentative, U_p, sigma_p, V_p)
+    U_p, sigma_p, V_p = safe_svd3(F_Ep_tentative)
 
     sigma_p_clamped = wp.vec3(0.0)
     low = 1.0 - particles.critical_compressions[p]
@@ -444,8 +520,15 @@ def k_update_deformations(particles: Particles, grid: Grid, weights: Weights, dt
 
     sigma_p_clamped_diag = wp.diag(sigma_p_clamped)
 
-    particles.elastic_deformations[p] = U_p * sigma_p_clamped_diag * wp.transpose(V_p)
-    particles.plastic_deformations[p] = V_p * wp.inverse(sigma_p_clamped_diag) * wp.transpose(U_p) * F_p
+    inv_sigma_p_clamped = wp.vec3(
+        1.0 / sigma_p_clamped[0],
+        1.0 / sigma_p_clamped[1],
+        1.0 / sigma_p_clamped[2]
+    )
+    inv_sigma_p_clamped_diag = wp.diag(inv_sigma_p_clamped)
+
+    particles.elastic_deformations[p] = U_p @ sigma_p_clamped_diag @ wp.transpose(V_p)
+    particles.plastic_deformations[p] = V_p @ inv_sigma_p_clamped_diag @ wp.transpose(U_p) @ F_p
 
 
 @wp.kernel
@@ -483,30 +566,56 @@ def k_g2p(particles: Particles, grid: Grid, weights: Weights, dt: float):
 
 
 @wp.kernel
-def k_calculate_particle_collisions(particles: Particles, boundary: PlaneBoundary):
+def k_calculate_particle_collisions(
+        particles: Particles,
+        boundaries: wp.array[wp.uint64],
+        dt: float
+):
     p = wp.tid()
 
     position = particles.positions[p]
     velocity = particles.velocities[p]
 
-    dist = signed_distance(boundary, position)
+    for b in range(boundaries.shape[0]):
+        test_position = position + dt * velocity
+        boundary_id = boundaries[b]
 
-    if dist <= 0.0:
-        normal = boundary.normal
-        velocity_normal = wp.dot(velocity, normal)
-        velocity_tangent = velocity - velocity_normal * normal
+        query = wp.mesh_query_point_sign_normal(boundary_id, test_position, MAX_COLLISION_DIST, EPSILON)
 
-        if velocity_normal > 0.0:
-            return
+        if query.result:
+            closest_p = wp.mesh_eval_position(boundary_id, query.face, query.u, query.v)
+            delta = test_position - closest_p
+            dist = wp.length(delta) * query.sign
 
-        if wp.length(velocity_tangent) <= -COULOMB_FRICTION * velocity_normal:
-            particles.velocities[p] = wp.vec3(0.0)
-        else:
-            particles.velocities[p] = velocity_tangent + COULOMB_FRICTION * velocity_normal * (velocity_tangent / wp.length(velocity_tangent))
+            if dist <= 0.0:
+                delta_len = wp.length(delta)
+                normal = wp.vec3(0.0, 0.0, 0.0)
+
+                if delta_len > 1e-6:
+                    normal = (delta / delta_len) * query.sign
+                else:
+                    # Fallback for boundary touch
+                    v0 = wp.mesh_eval_position(boundary_id, query.face, 0.0, 0.0)
+                    v1 = wp.mesh_eval_position(boundary_id, query.face, 1.0, 0.0)
+                    v2 = wp.mesh_eval_position(boundary_id, query.face, 0.0, 1.0)
+                    normal = wp.normalize(wp.cross(v1 - v0, v2 - v0))
+
+                velocity_normal = wp.dot(velocity, normal)
+                velocity_tangent = velocity - velocity_normal * normal
+
+                if velocity_normal > 0.0:
+                    continue
+
+                if wp.length(velocity_tangent) <= -COULOMB_FRICTION * velocity_normal:
+                    velocity = wp.vec3(0.0, 0.0, 0.0)
+                else:
+                    velocity = velocity_tangent + COULOMB_FRICTION * velocity_normal * (
+                                velocity_tangent / wp.length(velocity_tangent))
+
+    particles.velocities[p] = velocity
 
 
 @wp.kernel
 def k_advect_particle_positions(particles: Particles, dt: float):
     p = wp.tid()
     particles.positions[p] += dt * particles.velocities[p]
-

@@ -1,3 +1,4 @@
+
 import warp as wp
 
 
@@ -22,16 +23,52 @@ def bspline_dw(x: float) -> float:
 
 
 @wp.func
-def extract_rotation(F: wp.mat33) -> wp.mat33:
-    """
-    Compute the polar decomposition of a 3x3 matrix F into a rotation R and a symmetric matrix S such that F = R * S, then return the rotation.
-    """
+def safe_svd3(M: wp.mat33):
     U = wp.mat33(1.0)
     V = wp.mat33(1.0)
     sigma = wp.vec3(0.0)
 
-    wp.svd3(F, U, sigma, V)
+    wp.svd3(M, U, sigma, V)
 
-    R = U @ wp.transpose(V)
+    if wp.determinant(U) < 0.0:
+        U = wp.mat33(
+            U[0, 0], U[0, 1], -U[0, 2],
+            U[1, 0], U[1, 1], -U[1, 2],
+            U[2, 0], U[2, 1], -U[2, 2]
+        )
+    if wp.determinant(V) < 0.0:
+        V = wp.mat33(
+            V[0, 0], V[0, 1], -V[0, 2],
+            V[1, 0], V[1, 1], -V[1, 2],
+            V[2, 0], V[2, 1], -V[2, 2]
+        )
 
-    return R
+    return U, sigma, V
+
+
+@wp.func
+def extract_rotation(F: wp.mat33) -> wp.mat33:
+    U, sigma, V = safe_svd3(F)
+
+    return U @ wp.transpose(V)
+
+
+@wp.func
+def cofactor(A: wp.mat33) -> wp.mat33:
+    c00 = A[1, 1] * A[2, 2] - A[1, 2] * A[2, 1]
+    c01 = A[1, 2] * A[2, 0] - A[1, 0] * A[2, 2]
+    c02 = A[1, 0] * A[2, 1] - A[1, 1] * A[2, 0]
+
+    c10 = A[0, 2] * A[2, 1] - A[0, 1] * A[2, 2]
+    c11 = A[0, 0] * A[2, 2] - A[0, 2] * A[2, 0]
+    c12 = A[0, 1] * A[2, 0] - A[0, 0] * A[2, 1]
+
+    c20 = A[0, 1] * A[1, 2] - A[0, 2] * A[1, 1]
+    c21 = A[0, 2] * A[1, 0] - A[0, 0] * A[1, 2]
+    c22 = A[0, 0] * A[1, 1] - A[0, 1] * A[1, 0]
+
+    return wp.mat33(
+        c00, c01, c02,
+        c10, c11, c12,
+        c20, c21, c22
+    )
