@@ -34,14 +34,17 @@ def safe_svd3(M: wp.mat33):
         U = wp.mat33(
             U[0, 0], U[0, 1], -U[0, 2],
             U[1, 0], U[1, 1], -U[1, 2],
-            U[2, 0], U[2, 1], -U[2, 2]
+            U[2, 0], U[2, 1], -U[2, 2],
         )
+        sigma[2] = -sigma[2]
+
     if wp.determinant(V) < 0.0:
         V = wp.mat33(
             V[0, 0], V[0, 1], -V[0, 2],
             V[1, 0], V[1, 1], -V[1, 2],
-            V[2, 0], V[2, 1], -V[2, 2]
+            V[2, 0], V[2, 1], -V[2, 2],
         )
+        sigma[2] = -sigma[2]
 
     return U, sigma, V
 

@@ -14,7 +14,7 @@ DURATION = 5.0
 FPS = 30
 DT = 1e-5
 
-PARTICLES_PER_CELL = 8
+PARTICLES_PER_CELL = 64
 
 
 def main():
@@ -37,6 +37,7 @@ def main():
         radius=0.2,
         particle_density=derived_density,
     )
+    particles.velocities.fill_(wp.vec3(0.0, 0.0, -9.81 * 2))
 
     obstacles = []
     mesh_files = [

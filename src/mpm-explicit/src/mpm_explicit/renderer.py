@@ -25,7 +25,7 @@ def init(grid: Grid, obstacles: list[wp.Mesh]):
     ]
 
     rr.log(
-        "mpm/box",
+        "mpm/static/box",
         rr.Boxes3D(
             half_sizes=half_sizes,
             centers=center,
@@ -36,7 +36,7 @@ def init(grid: Grid, obstacles: list[wp.Mesh]):
 
     for i, mesh in enumerate(obstacles):
         rr.log(
-            f"mpm/obstacle_{i}",
+            f"mpm/static/obstacle_{i}",
             rr.Mesh3D(
                 vertex_positions=mesh.points.numpy(),
                 triangle_indices=mesh.indices.numpy().reshape(-1, 3),
@@ -48,4 +48,4 @@ def init(grid: Grid, obstacles: list[wp.Mesh]):
 
 def render(t: float, positions: np.ndarray):
     rr.set_time("step", timestamp=t)
-    rr.log("world/particles", rr.Points3D(positions=positions, colors=[255, 255, 255]))
+    rr.log("mpm/particles", rr.Points3D(positions=positions, colors=[255, 255, 255]))

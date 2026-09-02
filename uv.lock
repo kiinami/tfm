@@ -6,6 +6,7 @@ requires-python = ">=3.14"
 members = [
     "canny",
     "mpm-explicit",
+    "mpm16",
     "tfm",
 ]
 
@@ -76,6 +77,11 @@ requires-dist = [
     { name = "trimesh", specifier = ">=5.0.0" },
     { name = "warp-lang", specifier = ">=1.15.0" },
 ]
+
+[[package]]
+name = "mpm16"
+version = "0.1.0"
+source = { editable = "src/mpm16" }
 
 [[package]]
 name = "numpy"

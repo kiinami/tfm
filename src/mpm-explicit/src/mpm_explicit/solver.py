@@ -61,9 +61,9 @@ class Solver:
         self._initial_densities = wp.zeros(shape=len(self.particles), dtype=float, device="cuda")
 
         flat_size = self.grid.flat_dimensions
-        self._active_flags = wp.zeros(shape=flat_size, dtype=wp.int32, device="cuda")
-        self._active_offsets = wp.zeros(shape=flat_size, dtype=wp.int32, device="cuda")
-        self._active_nodes = wp.zeros(shape=flat_size, dtype=wp.vec3i, device="cuda")
+        self._active_flags = wp.zeros(shape=[flat_size], dtype=wp.int32, device="cuda")
+        self._active_offsets = wp.zeros(shape=[flat_size], dtype=wp.int32, device="cuda")
+        self._active_nodes = wp.zeros(shape=[flat_size], dtype=wp.vec3i, device="cuda")
         self._active_count = wp.zeros(shape=1, dtype=wp.int32, device="cuda")
 
         self._graph = self._capture_graph()
@@ -133,13 +133,13 @@ class Solver:
 
             wp.launch(
                 kernel=k_update_grid,
-                dim=self.grid.dimensions,
+                dim=self.grid.flat_dimensions,
                 inputs=[self.grid, self._active_nodes, self._active_count, self.dt]
             )
 
             wp.launch(
                 kernel=k_calculate_grid_collisions,
-                dim=self.grid.dimensions,
+                dim=self.grid.flat_dimensions,
                 inputs=[self.grid, self._active_nodes, self._active_count, self.obstacle_ids, self.dt]
             )
 
@@ -261,7 +261,7 @@ def k_normalize_grid(
     i, j, k = wp.tid()
 
     mass = grid.masses[i, j, k]
-    flat_idx = (i * grid.dimensions[1] + j) * grid.dimensions[2] + k
+    flat_idx = (i * int(grid.dimensions[1]) + j) * int(grid.dimensions[2]) + k
 
     if mass > EPSILON:
         grid.velocities[i, j, k] = grid.velocities[i, j, k] / mass
@@ -280,9 +280,9 @@ def k_collect_active_nodes(
         active_count: wp.array[int],
 ):
     flat_idx = wp.tid()
-    dim_x = grid.dimensions[0]
-    dim_y = grid.dimensions[1]
-    dim_z = grid.dimensions[2]
+    dim_x = int(grid.dimensions[0])
+    dim_y = int(grid.dimensions[1])
+    dim_z = int(grid.dimensions[2])
     total_elements = dim_x * dim_y * dim_z
 
     if active_flags[flat_idx] == 1:
@@ -396,7 +396,8 @@ def k_update_grid(
         return
 
     # Look up original 3D indices
-    i, j, k = active_nodes[active_id]
+    coord = active_nodes[active_id]
+    i, j, k = coord[0], coord[1], coord[2]
 
     mass = grid.masses[i, j, k]
     vel = grid.velocities[i, j, k]
@@ -422,7 +423,8 @@ def k_calculate_grid_collisions(
     if active_id >= active_count[0]:
         return
 
-    i, j, k = active_nodes[active_id]
+    coord = active_nodes[active_id]
+    i, j, k = coord[0], coord[1], coord[2]
 
     position = grid_index_to_coord(grid, i, j, k)
     velocity = grid.new_velocities[i, j, k]

@@ -584,4 +584,5 @@ cython_debug/
 
 ### Custom items
 
-
+# Simulation recordings
+*.rrd

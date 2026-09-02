@@ -4,6 +4,7 @@
     <modules>
       <module fileurl="file://$PROJECT_DIR$/.idea/canny.iml" filepath="$PROJECT_DIR$/.idea/canny.iml" />
       <module fileurl="file://$PROJECT_DIR$/.idea/mpm-explicit.iml" filepath="$PROJECT_DIR$/.idea/mpm-explicit.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/mpm16.iml" filepath="$PROJECT_DIR$/.idea/mpm16.iml" />
       <module fileurl="file://$PROJECT_DIR$/.idea/tfm.iml" filepath="$PROJECT_DIR$/.idea/tfm.iml" />
     </modules>
   </component>
