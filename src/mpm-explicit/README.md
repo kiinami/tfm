@@ -2,7 +2,11 @@
 
 > Work in progress!
 
-A 3D Material Point Method (MPM) simulator implemented in Python using the Nvidia Warp library, and following the implementation of [1].
+<div align="center">
+  <img src="assets/recordings/snowball_on_diamond_at_30kmph.gif" alt="Smoke Simulation Capture" width="800" />
+</div>
+
+A 3D Material Point Method (MPM) simulator implemented in Python using the Nvidia Warp library, and following the implementation of [^1].
 
 ## Structure
 
@@ -24,4 +28,4 @@ uv run --package mpm-explicit python -m mpm_explicit
 
 ---
 
-[1]: A. Stomakhin, C. Schroeder, L. Chai, J. Teran, and A. Selle, “A material point method for snow simulation,” ACM Transactions on Graphics, vol. 32, no. 4, pp. 1–10, Jul. 2013, doi: 10.1145/2461912.2461948.
+[^1]: A. Stomakhin, C. Schroeder, L. Chai, J. Teran, and A. Selle, “A material point method for snow simulation,” ACM Transactions on Graphics, vol. 32, no. 4, pp. 1–10, Jul. 2013, doi: 10.1145/2461912.2461948.
