@@ -586,3 +586,7 @@ cython_debug/
 
 # Simulation recordings
 *.rrd
+
+# Auxiliary files
+.claude/
+CLAUDE.md
