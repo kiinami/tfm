@@ -2,7 +2,8 @@ import warp as wp
 import math
 
 from mpm_explicit.constants import DEFAULT_CRITICAL_COMPRESSION, DEFAULT_CRITICAL_STRETCH, \
-    DEFAULT_HARDENING_COEFFICIENT, DEFAULT_YOUNG_MODULUS, DEFAULT_POISSON_RATIO, DEFAULT_DENSITY
+    DEFAULT_HARDENING_COEFFICIENT, DEFAULT_YOUNG_MODULUS, DEFAULT_POISSON_RATIO, DEFAULT_DENSITY, \
+    MAX_HARDENING_MULTIPLIER
 
 
 @wp.struct
@@ -366,10 +367,12 @@ def k_particles_fill_deformations(particles: Particles):
 @wp.func
 def mu_(plastic_deformation: wp.mat33, hardening_coef: float, initial_mu: float) -> float:
     Jp = wp.determinant(plastic_deformation)
-    return initial_mu * wp.exp(hardening_coef * (1.0 - Jp))
+    hardening_mult = wp.min(wp.exp(hardening_coef * (1.0 - Jp)), MAX_HARDENING_MULTIPLIER)
+    return initial_mu * hardening_mult
 
 
 @wp.func
 def lambda_(plastic_deformation: wp.mat33, hardening_coef: float, initial_lambda: float) -> float:
     Jp = wp.determinant(plastic_deformation)
-    return initial_lambda * wp.exp(hardening_coef * (1.0 - Jp))
+    hardening_mult = wp.min(wp.exp(hardening_coef * (1.0 - Jp)), MAX_HARDENING_MULTIPLIER)
+    return initial_lambda * hardening_mult
