@@ -10,53 +10,51 @@ from rich.progress import (
 )
 from rich.text import Text
 
-import mpm_explicit.renderer as rd
-from mpm_explicit.grid import Grid
-from mpm_explicit.particles import Particles
-from mpm_explicit.solver import Solver
-from mpm_explicit.utils import import_mesh
+import mpm2d.renderer as rd
+from mpm2d.grid import Grid
+from mpm2d.particles import Particles
+from mpm2d.solver import Solver
 
-DURATION = 1.0
+DURATION = 5.0
 FPS = 30
 DT = 1e-5
-
 PARTICLES_PER_CELL = 16
+
+THROW_SPEED_X = 10.0
+THROW_SPEED_Y = 2.6
+BALL_RADIUS = 0.1
+BALL_HEIGHT = 0.5
 
 
 def main():
     print("Initializing warp and compiling kernels")
     wp.init()
 
+    # 3 m x 1.5 m box, same 1 cm cells as the drop test
     grid = Grid()
     grid.init(
-        min_coord=wp.vec3(-2.0, -2.0, -0.05),
-        max_coord=wp.vec3(2.0, 2.0, 4.0),
-        dimensions=wp.vec3ui(wp.uint32(200), wp.uint32(200), wp.uint32(305)),
+        min_coord=wp.vec2(0.0),
+        max_coord=wp.vec2(3.0, 1.5),
+        dimensions=wp.vec2ui(wp.uint32(300), wp.uint32(150)),
     )
-
-    cell_volume = (1.10 / 110) ** 3
-    derived_density = PARTICLES_PER_CELL / cell_volume
-
-    snowball_center = wp.vec3(0.0, 0.0, 2.5)
-    snowball_radius = 0.2
 
     particles = Particles()
-    particles.sample_packed_snowball(
-        center=snowball_center,
-        radius=snowball_radius,
-        particle_density=derived_density,
-        stiffness_outer_mult=1.5,
+    particles.add_snowball(
+        center=wp.vec2(0.6, BALL_HEIGHT),
+        radius=BALL_RADIUS,
+        segments=16,
+        initial_velocity=wp.vec2(THROW_SPEED_X, THROW_SPEED_Y),
     )
-    particles.velocities.fill_(wp.vec3(0.0, -14.0, 0.0))
+    particles.add_snowball(
+        center=wp.vec2(2.4, BALL_HEIGHT),
+        radius=BALL_RADIUS,
+        segments=16,
+        initial_velocity=wp.vec2(-THROW_SPEED_X, THROW_SPEED_Y),
+    )
 
-    obstacles = [
-        import_mesh("assets/models/floor.obj"),
-        import_mesh("assets/models/wall.obj"),
-    ]
+    rd.init(grid)
 
-    solver = Solver(grid, particles, obstacles, DT)
-
-    rd.init(grid, obstacles)
+    solver = Solver(grid, particles, DT)
 
     total_steps = int(round(DURATION / DT))
     frame_duration = 1.0 / FPS
