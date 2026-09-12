@@ -40,7 +40,7 @@ def init(grid: Grid, obstacles: list[wp.Mesh]):
             rr.Mesh3D(
                 vertex_positions=mesh.points.numpy(),
                 triangle_indices=mesh.indices.numpy().reshape(-1, 3),
-                vertex_colors=[128, 128, 128, 128]
+                vertex_colors=[[64, 83, 109, 255] for _ in range(mesh.points.shape[0])]
             ),
             static=True
         )

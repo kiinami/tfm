@@ -1,4 +1,7 @@
+from pathlib import Path
 
+import numpy as np
+import trimesh
 import warp as wp
 
 
@@ -75,3 +78,18 @@ def cofactor(A: wp.mat33) -> wp.mat33:
         c10, c11, c12,
         c20, c21, c22
     )
+
+
+def import_mesh(file: Path | str) -> wp.Mesh:
+    tm = trimesh.load_mesh(file)
+    rotation = trimesh.transformations.rotation_matrix(
+        np.radians(90), [1, 0, 0]
+    )
+    tm.apply_transform(rotation)
+    points = np.asarray(tm.vertices, dtype=np.float32)
+    indices = np.asarray(tm.faces, dtype=np.int32)
+    mesh = wp.Mesh(
+        points=wp.array(points, dtype=wp.vec3, device="cuda"),
+        indices=wp.array(indices.reshape(-1), dtype=wp.int32, device="cuda"),
+    )
+    return mesh

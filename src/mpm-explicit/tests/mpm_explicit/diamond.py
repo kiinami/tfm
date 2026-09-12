@@ -1,10 +1,4 @@
-import mpm_explicit.renderer as rd
-import numpy as np
-import trimesh
 import warp as wp
-from mpm_explicit.grid import Grid
-from mpm_explicit.particles import Particles
-from mpm_explicit.solver import Solver
 from rich.progress import (
     BarColumn,
     MofNCompleteColumn,
@@ -15,6 +9,12 @@ from rich.progress import (
     TimeRemainingColumn,
 )
 from rich.text import Text
+
+import mpm_explicit.renderer as rd
+from mpm_explicit.grid import Grid
+from mpm_explicit.particles import Particles
+from mpm_explicit.solver import Solver
+from mpm_explicit.utils import import_mesh
 
 DURATION = 1.0
 FPS = 30
@@ -30,7 +30,7 @@ def main():
     grid = Grid()
     grid.init(
         min_coord=wp.vec3(-2.0, -2.0, -0.05),
-        max_coord=wp.vec3(2.0, 2.0, 3.0),
+        max_coord=wp.vec3(2.0, 2.0, 4.0),
         dimensions=wp.vec3ui(wp.uint32(200), wp.uint32(200), wp.uint32(305)),
     )
 
@@ -47,29 +47,11 @@ def main():
         particle_density=derived_density,
         stiffness_outer_mult=1.5,
     )
-    # particles.velocities.fill_(wp.vec3(0.0, 0.0, -9.81 * 2))
 
-    obstacles = []
-    mesh_files = [
-        "assets/models/floor.obj",
-        "assets/models/diamond.obj",
+    obstacles = [
+        import_mesh("assets/models/floor.obj"),
+        import_mesh("assets/models/diamond.obj"),
     ]
-
-    for f in mesh_files:
-        tm = trimesh.load_mesh(f)
-        rotation = trimesh.transformations.rotation_matrix(
-            np.radians(90), [1, 0, 0]
-        )
-        tm.apply_transform(rotation)
-        points = np.asarray(tm.vertices, dtype=np.float32)
-        indices = np.asarray(tm.faces, dtype=np.int32)
-        mesh = wp.Mesh(
-            points=wp.array(points, dtype=wp.vec3, device="cuda"),
-            indices=wp.array(
-                indices.reshape(-1), dtype=wp.int32, device="cuda"
-            ),
-        )
-        obstacles.append(mesh)
 
     solver = Solver(grid, particles, obstacles, DT)
 
@@ -106,15 +88,15 @@ def main():
             return Text(f"{time_per_step:.2f} s/step", style="cyan")
 
     with Progress(
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(),
-        TaskProgressColumn(),
-        "•",
-        MofNCompleteColumn(),
-        "•",
-        TimePerStepColumn(moving_average=False),
-        "•",
-        TimeRemainingColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TaskProgressColumn(),
+            "•",
+            MofNCompleteColumn(),
+            "•",
+            TimePerStepColumn(moving_average=False),
+            "•",
+            TimeRemainingColumn(),
     ) as progress:
         task_steps = progress.add_task(description="Steps", total=total_steps)
         task_frames = progress.add_task(
