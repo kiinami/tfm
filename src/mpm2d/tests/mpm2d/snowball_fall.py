@@ -28,15 +28,16 @@ def main():
     grid = Grid()
     grid.init(
         min_coord=wp.vec2(0.0),
-        max_coord=wp.vec2(1.0, 2.0),
-        dimensions=wp.vec2ui(wp.uint32(100), wp.uint32(200)),
+        max_coord=wp.vec2(1.0, 4.0),
+        dimensions=wp.vec2ui(wp.uint32(100), wp.uint32(400)),
     )
 
     particles = Particles()
     particles.add_snowball(
-        center=wp.vec2(0.5, 1.5),
-        radius=0.2,
+        center=wp.vec2(0.5, 3.5),
+        radius=0.1,
         segments=16,
+        hardening_coef=200.0,
     )
 
     rd.init(grid)

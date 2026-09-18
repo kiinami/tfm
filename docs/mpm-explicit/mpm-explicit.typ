@@ -68,6 +68,18 @@
 
 #divider()
 
+- Total stored elastic energy in the system is given by $ integral_(Omega^0) Psi(#FE (X), #FP (X)) d X $
+- MPM discretizes this integral into $ Phi = sum_p V_p^0 Psi(FE _p, FP _p) $
+
+- We need to solve $ sum_j (I delta_(i j) + beta Delta t^2 m_i^(-1) (partial^2 Phi^n)/(partial hat(x)_i partial hat(x)_j)) v_j^(n+1) = v_i^star  \ delta_bold(i j) = cases(1 & "if" i = j, 0 & "otherwise") \ beta = cases(0 & "for explicit integration", 1/2 & "for trapezoidal integration", 1 & "for backwards Euler") $ where:
+  - $sum_j$ sum over grid nodes $j$
+  - $I$ is the identity matrix (3x3)
+  - $Delta t^2$ is the timestep squared
+  - $m_i^(-1)$ is the inverse of the mass of the node
+  
+
+#divider()
+
 
 
 
@@ -139,7 +151,8 @@ We are now in Eulerian space
   - For surfaces where snow should stick, set $v'_"rel" = 0$ unconditionally if the surface is marked as sticky
 
 6. Implicitly solve for the end-of-step grid velocities (or skip for explicit)
-  - Solve the system $ sum_j (I delta_bold(i j) + beta delta t^2 m_bold(i)^(-1) (partial^2 Phi^n)/(partial hat(bold(x))_bold(j) partial hat(bold(x))_bold(j))) bold(v_j)^(n + 1) = bold(v_i)^star \ delta_bold(i j) = cases(1 & "if" i = j, 0 & "otherwise") \ beta = cases(0 & "for explicit integration", 1/2 & "for trapezoidal integration", 1 & "for backwards Euler") $ // TODO: desgranar con cosas en Part IV Section 4.4
+  - Solve the system $ sum_j (I delta_bold(i j) + beta delta t^2 m_bold(i)^(-1) (partial^2 Phi^n)/(partial hat(bold(x))_bold(j) partial hat(bold(x))_bold(j))) bold(v_j)^(n + 1) = bold(v_i)^star \ delta_bold(i j) = cases(1 & "if" i = j, 0 & "otherwise") \ beta = cases(0 & "for explicit integration", 1/2 & "for trapezoidal integration", 1 & "for backwards Euler") $
+
 7. Update deformation gradients on particles from the new grid velocity field, applying the pastic yield (SVD clamp)
   - The new grid velocity field is defined for each particle as $ nabla bold(v)_p^(n+1) = sum_i bold(v_i)^(n+1) (nabla w_(bold(i)p)^(n))^T $ where $sum_i$ iterates over the particle's support, $bold(v_i)^(n+1)$ is the new velocity calculated in step 4 if explicit or in step 6 for implicit, and $(nabla w^n_(bold(i)p))^T$ is the transpose (row 3-vector) of the weight gradient between node $bold(i)$ and particle $p$
   - Then we calculate the total deformation gradient with $ bold(F)^(n+1)_p = (I + Delta t nabla bold(v)_p^(n+1)) bold(F)_p^n $

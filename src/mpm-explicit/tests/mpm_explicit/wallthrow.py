@@ -46,6 +46,7 @@ def main():
         radius=snowball_radius,
         particle_density=derived_density,
         stiffness_outer_mult=1.5,
+        hardening_coef=200.0,
     )
     particles.velocities.fill_(wp.vec3(0.0, -14.0, 0.0))
 

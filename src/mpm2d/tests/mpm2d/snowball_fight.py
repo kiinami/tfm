@@ -15,7 +15,7 @@ from mpm2d.grid import Grid
 from mpm2d.particles import Particles
 from mpm2d.solver import Solver
 
-DURATION = 5.0
+DURATION = 1.0
 FPS = 30
 DT = 1e-5
 PARTICLES_PER_CELL = 16
@@ -30,7 +30,6 @@ def main():
     print("Initializing warp and compiling kernels")
     wp.init()
 
-    # 3 m x 1.5 m box, same 1 cm cells as the drop test
     grid = Grid()
     grid.init(
         min_coord=wp.vec2(0.0),
@@ -46,7 +45,7 @@ def main():
         initial_velocity=wp.vec2(THROW_SPEED_X, THROW_SPEED_Y),
     )
     particles.add_snowball(
-        center=wp.vec2(2.4, BALL_HEIGHT),
+        center=wp.vec2(2.4, BALL_HEIGHT - 0.1),
         radius=BALL_RADIUS,
         segments=16,
         initial_velocity=wp.vec2(-THROW_SPEED_X, THROW_SPEED_Y),

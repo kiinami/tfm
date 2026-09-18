@@ -1,10 +1,18 @@
 import numpy as np
 import warp as wp
 
-from mpm2d.constants import DEFAULT_CRITICAL_COMPRESSION, DEFAULT_CRITICAL_STRETCH, DEFAULT_HARDENING_COEFFICIENT, \
-    DEFAULT_YOUNG_MODULUS, DEFAULT_POISSON_RATIO, DEFAULT_DENSITY, DEFAULT_PARTICLE_DIAMETER, AREA_EPSILON, \
-    MAX_SAMPLE_TRIES
-from mpm2d.utils import regular_polygon, polygon_area
+from mpm2d.constants import (
+    AREA_EPSILON,
+    DEFAULT_CRITICAL_COMPRESSION,
+    DEFAULT_CRITICAL_STRETCH,
+    DEFAULT_DENSITY,
+    DEFAULT_HARDENING_COEFFICIENT,
+    DEFAULT_PARTICLE_DIAMETER,
+    DEFAULT_POISSON_RATIO,
+    DEFAULT_YOUNG_MODULUS,
+    MAX_SAMPLE_TRIES,
+)
+from mpm2d.utils import polygon_area, regular_polygon
 
 _FIELDS = {
     "volumes": wp.float32,
@@ -64,19 +72,19 @@ class Particles:
         return old
 
     def add_snowball(
-            self,
-            center: wp.vec2[float],
-            radius: float,
-            initial_velocity: wp.vec2[float] = wp.vec2(0.0),
-            segments: int = 8,
-            particle_diameter: float = DEFAULT_PARTICLE_DIAMETER,
-            density: float = DEFAULT_DENSITY,
-            critical_compression: float = DEFAULT_CRITICAL_COMPRESSION,
-            critical_stretch: float = DEFAULT_CRITICAL_STRETCH,
-            hardening_coef: float = DEFAULT_HARDENING_COEFFICIENT,
-            young_modulus: float = DEFAULT_YOUNG_MODULUS,
-            poisson_ratio: float = DEFAULT_POISSON_RATIO,
-            seed: int = 5,
+        self,
+        center: wp.vec2[float],
+        radius: float,
+        initial_velocity: wp.vec2[float] = wp.vec2(0.0),
+        segments: int = 8,
+        particle_diameter: float = DEFAULT_PARTICLE_DIAMETER,
+        density: float = DEFAULT_DENSITY,
+        critical_compression: float = DEFAULT_CRITICAL_COMPRESSION,
+        critical_stretch: float = DEFAULT_CRITICAL_STRETCH,
+        hardening_coef: float = DEFAULT_HARDENING_COEFFICIENT,
+        young_modulus: float = DEFAULT_YOUNG_MODULUS,
+        poisson_ratio: float = DEFAULT_POISSON_RATIO,
+        seed: int = 5,
     ):
         center = np.asarray(center, dtype=np.float64)
         vertices = regular_polygon(center, radius, segments)
@@ -92,8 +100,9 @@ class Particles:
 
         if not self.volumes:
             self.init(count)
-
-        offset = self._grow(count)
+            offset = 0
+        else:
+            offset = self._grow(count)
 
         lower, upper = vertices.min(axis=0), vertices.max(axis=0)
         bbox_center = 0.5 * (lower + upper)
@@ -123,9 +132,9 @@ class Particles:
 
 def lame_parameters(young_modulus: float, poisson_ratio: float):
     lam = (
-            young_modulus
-            * poisson_ratio
-            / ((1.0 + poisson_ratio) * (1.0 - 2.0 * poisson_ratio))
+        young_modulus
+        * poisson_ratio
+        / ((1.0 + poisson_ratio) * (1.0 - 2.0 * poisson_ratio))
     )
     mu = young_modulus / (2.0 + 2.0 * poisson_ratio)
     return lam, mu
@@ -134,7 +143,7 @@ def lame_parameters(young_modulus: float, poisson_ratio: float):
 @wp.func
 def polygon_contains(vertices: wp.array[wp.vec2], p: wp.vec2) -> bool:
     n = vertices.shape[0]
-    crossings = int(0)
+    crossings = wp.int32(0)
 
     for i in range(n):
         vi = vertices[i]
@@ -142,32 +151,33 @@ def polygon_contains(vertices: wp.array[wp.vec2], p: wp.vec2) -> bool:
 
         above_i = vi[1] > p[1]
         above_j = vj[1] > p[1]
+        crosses = wp.bool(False)
         if above_i != above_j:
             edge_x = (vj[0] - vi[0]) * (p[1] - vi[1]) / (vj[1] - vi[1]) + vi[0]
-            if p[0] < edge_x:
-                crossings += 1
+            crosses = p[0] < edge_x
+        crossings = crossings + int(crosses)
 
     return (crossings % 2) == 1
 
 
 @wp.kernel
 def k_particles_sample_snowball(
-        particles: Particles,
-        offset: int,
-        count: int,
-        vertices: wp.array[wp.vec2],
-        lower: wp.vec2,
-        upper: wp.vec2,
-        center: wp.vec2,
-        half_extent: wp.vec2,
-        velocity: wp.vec2,
-        mass: float,
-        initial_lambda: float,
-        initial_mu: float,
-        critical_compression: float,
-        critical_stretch: float,
-        max_hardening: float,
-        seed: int,
+    particles: Particles,
+    offset: int,
+    count: int,
+    vertices: wp.array[wp.vec2],
+    lower: wp.vec2,
+    upper: wp.vec2,
+    center: wp.vec2,
+    half_extent: wp.vec2,
+    velocity: wp.vec2,
+    mass: float,
+    initial_lambda: float,
+    initial_mu: float,
+    critical_compression: float,
+    critical_stretch: float,
+    max_hardening: float,
+    seed: int,
 ):
     tid = wp.tid()
     if tid >= count:
@@ -185,11 +195,6 @@ def k_particles_sample_snowball(
             position = candidate
             break
 
-    edge_factor = 0.5 * (
-            wp.abs(position[0] - center[0]) / half_extent[0]
-            + wp.abs(position[1] - center[1]) / half_extent[1]
-    )
-
     i = offset + tid
     particles.positions[i] = position
     particles.velocities[i] = velocity
@@ -199,14 +204,14 @@ def k_particles_sample_snowball(
     particles.mus[i] = initial_mu
     particles.critical_compressions[i] = critical_compression
     particles.critical_stretches[i] = critical_stretch
-    particles.hardening_coefs[i] = wp.randf(state, 0.0, max_hardening) * edge_factor
+    particles.hardening_coefs[i] = max_hardening
     particles.elastic_deformations[i] = wp.identity(n=2, dtype=float)
     particles.plastic_deformations[i] = wp.identity(n=2, dtype=float)
 
 
 @wp.func
 def mu_(
-        plastic_deformation: wp.mat22, hardening_coef: float, initial_mu: float
+    plastic_deformation: wp.mat22, hardening_coef: float, initial_mu: float
 ) -> float:
     Jp = wp.determinant(plastic_deformation)
     hardening_mult = wp.exp(hardening_coef * (1.0 - Jp))
@@ -215,7 +220,7 @@ def mu_(
 
 @wp.func
 def lambda_(
-        plastic_deformation: wp.mat22, hardening_coef: float, initial_lambda: float
+    plastic_deformation: wp.mat22, hardening_coef: float, initial_lambda: float
 ) -> float:
     Jp = wp.determinant(plastic_deformation)
     hardening_mult = wp.exp(hardening_coef * (1.0 - Jp))
