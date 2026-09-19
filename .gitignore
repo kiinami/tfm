@@ -590,6 +590,7 @@ cython_debug/
 # Auxiliary files
 .claude/
 CLAUDE.md
+TODO.md
 
 # Papers
 docs/papers

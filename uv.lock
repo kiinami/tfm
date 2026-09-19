@@ -6,6 +6,7 @@ requires-python = ">=3.14"
 members = [
     "canny",
     "mpm-explicit",
+    "mpm-implicit",
     "mpm16",
     "mpm2d",
     "tfm",
@@ -77,6 +78,27 @@ requires-dist = [
     { name = "rich", specifier = ">=15.0.0" },
     { name = "trimesh", specifier = ">=5.0.0" },
     { name = "warp-lang", specifier = ">=1.15.0" },
+]
+
+[[package]]
+name = "mpm-implicit"
+version = "0.1.0"
+source = { editable = "src/mpm-implicit" }
+dependencies = [
+    { name = "nvtx" },
+    { name = "rerun-sdk" },
+    { name = "rich" },
+    { name = "trimesh" },
+    { name = "warp-lang" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "nvtx", specifier = ">=0.2.16" },
+    { name = "rerun-sdk", specifier = ">=0.37.2" },
+    { name = "rich", specifier = ">=15.0.0" },
+    { name = "trimesh", specifier = ">=5.1.0" },
+    { name = "warp-lang", specifier = ">=1.17.0" },
 ]
 
 [[package]]

@@ -1,0 +1,23 @@
+[project]
+name = "mpm-implicit"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "kiinami", email = "kinami@posteo.net" }
+]
+requires-python = ">=3.14"
+dependencies = [
+    "nvtx>=0.2.16",
+    "rerun-sdk>=0.37.2",
+    "rich>=15.0.0",
+    "trimesh>=5.1.0",
+    "warp-lang>=1.17.0",
+]
+
+[project.scripts]
+mpm-implicit = "mpm_implicit:main"
+
+[build-system]
+requires = ["uv_build>=0.12.3,<0.13.0"]
+build-backend = "uv_build"
