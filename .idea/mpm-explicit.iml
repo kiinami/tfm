@@ -4,7 +4,8 @@
     <content url="file://$MODULE_DIR$/src/mpm-explicit">
       <sourceFolder url="file://$MODULE_DIR$/src/mpm-explicit/src" isTestSource="false" />
     </content>
-    <orderEntry type="jdk" jdkName="uv (tfm) (2)" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />
+    <orderEntry type="module" module-name="core" exported="" />
+    <orderEntry type="jdk" jdkName="uv (tfm) (2)" jdkType="Python SDK" />
   </component>
 </module>
