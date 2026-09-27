@@ -9,9 +9,9 @@ from mpm_implicit.utils import import_mesh
 
 
 def main():
-    min_coord = (-2.0, -2.0, -0.05)
-    max_coord = (2.0, 2.0, 4.0)
-    dimensions = (200, 200, 305)
+    max_coord = (1.0, 1.0, 3.0)
+    min_coord = (-1.0, -1.0, 0.0)
+    dimensions = (128, 128, 128)
 
     grid = Grid()
     grid.init(
@@ -31,15 +31,15 @@ def main():
 
     particles = Particles()
     particles.sample_sphere(
-        center=wp.vec3(0.0, 0.0, 2.5),
+        center=wp.vec3(0.0, 0.0, 2.7),
         radius=0.2,
-        velocity=wp.vec3(0.0, -3.0, 0.0),
+        velocity=wp.vec3(0.0, 0.0, -3.0),
         particle_diam=cell_size[0] * 0.5,
     )
 
     obstacles = [
         import_mesh("assets/models/floor_thick.obj"),
-        import_mesh("assets/models/wall_thick.obj"),
+        import_mesh("assets/models/diamond.obj"),
     ]
 
     solver = Solver(grid, particles, obstacles)

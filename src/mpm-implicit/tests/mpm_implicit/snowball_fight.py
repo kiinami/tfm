@@ -1,108 +1,85 @@
-from logging import critical
-
 import warp as wp
-from rich.progress import (
-    BarColumn,
-    Progress,
-    ProgressColumn,
-    TextColumn,
-    TimeRemainingColumn,
-)
-from rich.text import Text
 
 import mpm_implicit.renderer as rd
+from core.progress import MPMProgress
 from mpm_implicit.grid import Grid
-from mpm_implicit.particles import Particles
+from mpm_implicit.particles import Particles, sphere_particle_count
 from mpm_implicit.solver import Solver
-
-DURATION = 1.0
-FPS = 30
-LOG_PER_STEP = False
-
-PARTICLES_PER_CELL = 8
-
-THROW_SPEED_X = 10.0
-THROW_SPEED_Y = 2.6
-BALL_RADIUS = 0.2
-BALL_HEIGHT = 0.7
-
-
-class SimTimeColumn(ProgressColumn):
-    """Shows simulated seconds completed vs total, e.g. '0.42s / 1.00s'."""
-
-    def render(self, task):
-        total = task.total or 0.0
-        return Text(f"{task.completed:.3f}s / {total:.3f}s", style="progress.download")
-
-
-def _format_duration(seconds: float) -> str:
-    """Formats a duration picking s/min/h so it stays readable at any scale."""
-    if seconds < 60.0:
-        return f"{seconds:.2f} s"
-    if seconds < 3600.0:
-        return f"{seconds / 60.0:.2f} min"
-    return f"{seconds / 3600.0:.2f} h"
-
-
-class RealtimeSpeedColumn(ProgressColumn):
-    """Shows compute time spent per second of simulated time."""
-
-    def render(self, task):
-        elapsed = task.elapsed
-        sim_time = task.completed
-        if not elapsed or sim_time <= 0.0:
-            return Text("-- compute/s sim", style="progress.data.speed")
-        return Text(f"{_format_duration(elapsed / sim_time)} compute/s sim", style="progress.data.speed")
+from mpm_implicit.utils import import_mesh
 
 
 def main():
-    print("Initializing warp and compiling kernels")
-    wp.init()
+    max_coord = (1.0, 2.0, 2.0)
+    min_coord = (-1.0, 0.0, 0.0)
+    dimensions = (128, 128, 128)
 
     grid = Grid()
     grid.init(
-        min_coord=wp.vec3(-1.0, -1.00, 0.0),
-        max_coord=wp.vec3(1.0, 1.0, 1.5),
-        dimensions=wp.vec3ui(wp.uint32(200), wp.uint32(200), wp.uint32(300)),
+        min_coord=wp.vec3(*min_coord),
+        max_coord=wp.vec3(*max_coord),
+        dimensions=wp.vec3ui(
+            wp.uint32(dimensions[0]),
+            wp.uint32(dimensions[1]),
+            wp.uint32(dimensions[2]),
+        ),
     )
 
     particles = Particles()
-    particles.add_snowball(
-        center=wp.vec3(0.0, -0.7, BALL_HEIGHT),
-        radius=BALL_RADIUS,
-        initial_velocity=wp.vec3(0.0, THROW_SPEED_X, THROW_SPEED_Y),
-        critical_compression=1.9e-2,
+
+    cell_size = tuple(
+        (hi - lo) / n
+        for hi, lo, n in zip(max_coord, min_coord, dimensions, strict=True)
     )
-    particles.add_snowball(
-        center=wp.vec3(0.0, 0.7, BALL_HEIGHT),
-        radius=BALL_RADIUS,
-        initial_velocity=wp.vec3(0.0, -THROW_SPEED_X, THROW_SPEED_Y),
-        critical_compression=1.9e-2,
+    particle_diam = cell_size[0] * 0.5
+    emitters = [
+        {
+            "center": wp.vec3(0.0, 1.7, 1.7),
+            "radius": 0.15,
+            "velocity": wp.vec3(0.0, -2.0, -2.0),
+        },
+        {
+            "center": wp.vec3(0.0, 1.7, 0.3),
+            "radius": 0.2,
+            "velocity": wp.vec3(0.0, -3.0, 3.0),
+        },
+        {
+            "center": wp.vec3(0.0, 0.37, 1.75),
+            "radius": 0.2,
+            "velocity": wp.vec3(0.0, 3.0, -2.0),
+        },
+    ]
+
+    total_particles = sum(
+        sphere_particle_count(e["radius"], particle_diam) for e in emitters
     )
+    particles.init(total_particles)
 
-    solver = Solver(grid, particles, [])
+    offset = 0
+    for emitter in emitters:
+        offset += particles.fill_sphere(
+            offset=offset,
+            center=emitter["center"],
+            radius=emitter["radius"],
+            particle_diam=particle_diam,
+            velocity=emitter["velocity"],
+        )
 
-    rd.init(grid, [])
+    particles.fill_deformations()
 
-    frame_duration = 1.0 / FPS
-    next_frame_time = 0.0
+    obstacles = [
+        import_mesh("assets/models/floor_thick.obj"),
+    ]
 
-    with Progress(
-            TextColumn("[progress.description]{task.description}"),
-            BarColumn(),
-            SimTimeColumn(),
-            "•",
-            RealtimeSpeedColumn(),
-            "•",
-            TimeRemainingColumn(),
-    ) as progress:
-        task = progress.add_task(description="Simulating...", total=DURATION)
-        while solver.t < DURATION:
+    solver = Solver(grid, particles, obstacles)
+
+    rd.init(grid, obstacles)
+
+    with MPMProgress(duration=4.0, fps=60) as progress:
+        while solver.t < progress.duration:
             solver.update()
-            if LOG_PER_STEP or solver.t >= next_frame_time:
+            progress.set_t(solver.t)
+            if progress.should_render:
                 rd.render(solver.t, solver.particles.positions.numpy())
-                next_frame_time += frame_duration
-            progress.update(task, completed=solver.t)
 
 
 if __name__ == "__main__":

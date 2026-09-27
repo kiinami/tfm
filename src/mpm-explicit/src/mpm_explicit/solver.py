@@ -31,13 +31,13 @@ class Weights:
     dwz: wp.array[wp.vec4]
 
     def init(self, n: int):
-        self.base = wp.empty(n, dtype=wp.vec3i, device="cuda")
-        self.wx = wp.empty(n, dtype=wp.vec4, device="cuda")
-        self.wy = wp.empty(n, dtype=wp.vec4, device="cuda")
-        self.wz = wp.empty(n, dtype=wp.vec4, device="cuda")
-        self.dwx = wp.empty(n, dtype=wp.vec4, device="cuda")
-        self.dwy = wp.empty(n, dtype=wp.vec4, device="cuda")
-        self.dwz = wp.empty(n, dtype=wp.vec4, device="cuda")
+        self.base = wp.empty(n, dtype=wp.vec3i)
+        self.wx = wp.empty(n, dtype=wp.vec4)
+        self.wy = wp.empty(n, dtype=wp.vec4)
+        self.wz = wp.empty(n, dtype=wp.vec4)
+        self.dwx = wp.empty(n, dtype=wp.vec4)
+        self.dwy = wp.empty(n, dtype=wp.vec4)
+        self.dwz = wp.empty(n, dtype=wp.vec4)
 
 
 class Solver:
@@ -102,7 +102,7 @@ class Solver:
 
         self._graph = self._capture_graph()
 
-    @cached_property
+    @property
     def obstacle_ids(self) -> wp.array[wp.uint64]:
         return wp.array([obs.id for obs in self.obstacles], dtype=wp.uint64)
 

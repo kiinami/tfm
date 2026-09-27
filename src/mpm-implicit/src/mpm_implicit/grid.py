@@ -7,8 +7,6 @@ import warp as wp
 class Grid:
     """
     A eulerian grid calculated over a set of particles
-
-    Attributes
     """
     min_coord: wp.vec3
     max_coord: wp.vec3
@@ -36,11 +34,14 @@ class Grid:
             (max_coord[2] - min_coord[2]) / float(dimensions[2]),
         )
 
-        self.masses = wp.zeros(shape=self.dimensions, dtype=float, device="cuda")
-        self.velocities = wp.zeros(shape=self.dimensions, dtype=wp.vec3, device="cuda")
-        self.new_velocities = wp.zeros(shape=self.dimensions, dtype=wp.vec3, device="cuda")
-        self.forces = wp.zeros(shape=self.dimensions, dtype=wp.vec3, device="cuda")
-        self.is_active = wp.zeros(shape=self.dimensions, dtype=bool, device="cuda")
+        self.masses = wp.zeros(shape=self.dimensions, dtype=float)
+        self.velocities = wp.zeros(shape=self.dimensions, dtype=wp.vec3)
+        self.new_velocities = wp.zeros(shape=self.dimensions, dtype=wp.vec3)
+        self.forces = wp.zeros(shape=self.dimensions, dtype=wp.vec3)
+        self.is_active = wp.zeros(shape=self.dimensions, dtype=bool)
+
+    def min_size(self) -> float:
+        return float(min(self.cell_size[0], self.cell_size[1], self.cell_size[2]))
 
     def center(self) -> wp.vec3:
         return (self.min_coord + self.max_coord) * 0.5
@@ -58,6 +59,22 @@ class Grid:
         self.velocities.zero_()
         self.new_velocities.zero_()
         self.forces.zero_()
+
+
+@wp.func
+def grid_index_from_flat(grid: Grid, idx: wp.int32) -> tuple[wp.int32, wp.int32, wp.int32]:
+    dim_y = int(grid.dimensions[1])
+    dim_z = int(grid.dimensions[2])
+    i = idx // (dim_y * dim_z)
+    rem = idx % (dim_y * dim_z)
+    j = rem // dim_z
+    k = rem % dim_z
+    return (i, j, k)
+
+
+@wp.func
+def grid_index_to_flat(grid: Grid, i: wp.int32, j: wp.int32, k: wp.int32) -> wp.int32:
+    return (i * int(grid.dimensions[1]) + j) * int(grid.dimensions[2]) + k
 
 
 @wp.func

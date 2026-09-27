@@ -89,7 +89,7 @@ def import_mesh(file: Path | str) -> wp.Mesh:
     points = np.asarray(tm.vertices, dtype=np.float32)
     indices = np.asarray(tm.faces, dtype=np.int32)
     mesh = wp.Mesh(
-        points=wp.array(points, dtype=wp.vec3, device="cuda"),
-        indices=wp.array(indices.reshape(-1), dtype=wp.int32, device="cuda"),
+        points=wp.array(points, dtype=wp.vec3),
+        indices=wp.array(indices.reshape(-1), dtype=wp.int32),
     )
     return mesh
