@@ -4,6 +4,7 @@ import rerun.blueprint as rrb
 import warp as wp
 
 from mpm_implicit.grid import Grid
+from mpm_implicit.particles import Particles
 
 
 def init(grid: Grid, obstacles: list[wp.Mesh]):
@@ -46,6 +47,15 @@ def init(grid: Grid, obstacles: list[wp.Mesh]):
         )
 
 
-def render(t: float, positions: np.ndarray):
+def render(t: float, particles: Particles, contrast: float = 0.5):
     rr.set_time("step", timestamp=t)
-    rr.log("mpm/particles", rr.Points3D(positions=positions, colors=[255, 255, 255]))
+
+    densities = particles.densities.numpy()
+    reference_densities = particles.masses.numpy() / particles.volumes.numpy()
+
+    shade = densities / reference_densities * contrast + (1.0 - contrast)
+    shade = np.clip(shade, 0.0, 1.0)
+
+    colors = np.repeat((shade * 255.0).astype(np.uint8)[:, None], 3, axis=1)
+
+    rr.log("mpm/particles", rr.Points3D(positions=particles.positions.numpy(), colors=colors))

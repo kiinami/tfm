@@ -51,7 +51,7 @@ def main():
             solver.update()
             progress.set_t(solver.t)
             if progress.should_render:
-                rd.render(solver.t, solver.particles.positions.numpy())
+                rd.render(solver.t, solver.particles)
 
 
 if __name__ == "__main__":
