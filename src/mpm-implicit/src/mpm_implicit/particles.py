@@ -9,8 +9,22 @@ from mpm_implicit.constants import (
     DEFAULT_DENSITY,
     DEFAULT_HARDENING_COEFFICIENT,
     DEFAULT_POISSON_RATIO,
-    DEFAULT_YOUNG_MODULUS,
+    DEFAULT_YOUNG_MODULUS, VOLUME_EPSILON, DEFAULT_PARTICLE_DIAMETER
 )
+
+_FIELDS = {
+    "volumes": wp.float32,
+    "masses": wp.float32,
+    "critical_compressions": wp.float32,
+    "critical_stretches": wp.float32,
+    "hardening_coefs": wp.float32,
+    "mus": wp.float32,
+    "lambdas": wp.float32,
+    "positions": wp.vec3,
+    "velocities": wp.vec3,
+    "elastic_deformations": wp.mat33,
+    "plastic_deformations": wp.mat33,
+}
 
 
 @wp.struct
@@ -329,6 +343,98 @@ class Particles:
             kernel=k_particles_fill_deformations, dim=len(self), inputs=[self]
         )
 
+    def _grow(self, extra: int, device=None) -> int:
+        old = len(self)
+        for name, dtype in _FIELDS.items():
+            existing = getattr(self, name, None)
+            dev = device
+            if dev is None:
+                dev = existing.device if existing is not None else "cuda"
+
+            grown = wp.empty(shape=old + extra, dtype=dtype, device=dev)
+            if old > 0 and existing is not None:
+                wp.copy(grown, existing, 0, 0, old)
+            setattr(self, name, grown)
+        return old
+
+    def add_snowball(
+            self,
+            center: wp.vec3,
+            radius: float,
+            initial_velocity: wp.vec3 = wp.vec3(0.0),
+            spin_axis: wp.vec3 = wp.vec3(0.0, 1.0, 0.0),
+            angular_speed: float = 0.0,  # rad/s, right-hand rule around spin_axis
+            particle_diameter: float = DEFAULT_PARTICLE_DIAMETER,
+            density: float = DEFAULT_DENSITY,  # noqa: F821  (already imported upstream)
+            critical_compression: float = DEFAULT_CRITICAL_COMPRESSION,  # noqa: F821
+            critical_stretch: float = DEFAULT_CRITICAL_STRETCH,  # noqa: F821
+            hardening_coef: float = DEFAULT_HARDENING_COEFFICIENT,  # noqa: F821
+            young_modulus: float = DEFAULT_YOUNG_MODULUS,  # noqa: F821
+            poisson_ratio: float = DEFAULT_POISSON_RATIO,  # noqa: F821
+            shell_stiffness: float = 2.0,  # surface/core stiffness ratio (1.0 = uniform)
+            shell_density: float = 1.25,  # surface/core density ratio (1.0 = uniform)
+            noise_amplitude: float = 0.3,  # relative stiffness variation, keep in [0, 1)
+            noise_scale: float = 4.0,  # noise features per radius
+            seed: int = 5,
+    ) -> int:
+        center = np.asarray(center, dtype=np.float64)
+
+        volume = 4.0 / 3.0 * np.pi * radius ** 3
+        if volume < VOLUME_EPSILON:
+            return 0
+
+        count = int(volume / particle_diameter ** 3)
+        if count == 0:
+            return 0
+
+        # Split the exact sphere volume evenly so total volume and mass are exact.
+        particle_volume = volume / count
+
+        existing = getattr(self, "volumes", None)
+        if existing is None or len(existing) == 0:
+            self.init(count)
+            offset = 0
+        else:
+            offset = self._grow(count)
+        device = self.positions.device
+
+        initial_lambda, initial_mu = lame_parameters(young_modulus, poisson_ratio)
+
+        axis = np.asarray(spin_axis, dtype=np.float64)
+        axis_len = np.linalg.norm(axis)
+        if axis_len > 0.0 and angular_speed != 0.0:
+            omega = axis / axis_len * angular_speed
+        else:
+            omega = np.zeros(3)
+
+        wp.launch(
+            kernel=k_particles_sample_snowball,
+            dim=count,
+            inputs=[
+                self,
+                offset,
+                count,
+                wp.vec3(*center),
+                float(radius),
+                wp.vec3(*np.asarray(initial_velocity, dtype=np.float64)),
+                wp.vec3(*omega),
+                particle_volume,
+                particle_volume * density,
+                initial_lambda,
+                initial_mu,
+                critical_compression,
+                critical_stretch,
+                hardening_coef,
+                shell_stiffness,
+                shell_density,
+                noise_amplitude,
+                noise_scale,
+                seed,
+            ],
+            device=device,
+        )
+        return count
+
     def __len__(self):
         return len(self.volumes)
 
@@ -518,19 +624,84 @@ def k_particles_fill_deformations(particles: Particles):
     particles.plastic_deformations[p] = I
 
 
+@wp.kernel
+def k_particles_sample_snowball(
+        particles: Particles,  # noqa: F821
+        offset: int,
+        count: int,
+        center: wp.vec3,
+        radius: float,
+        velocity: wp.vec3,
+        angular_velocity: wp.vec3,
+        volume: float,
+        mass: float,
+        initial_lambda: float,
+        initial_mu: float,
+        critical_compression: float,
+        critical_stretch: float,
+        hardening_coef: float,
+        shell_stiffness: float,
+        shell_density: float,
+        noise_amplitude: float,
+        noise_scale: float,
+        seed: int,
+):
+    tid = wp.tid()
+    if tid >= count:
+        return
+
+    state = wp.rand_init(seed, offset + tid)
+
+    local = wp.sample_unit_sphere(state)
+    position = center + radius * local
+
+    shell = wp.length_sq(local)
+    stiffness = (1.0 + (shell_stiffness - 1.0) * shell) / (1.0 + 0.6 * (shell_stiffness - 1.0))
+    heaviness = (1.0 + (shell_density - 1.0) * shell) / (1.0 + 0.6 * (shell_density - 1.0))
+
+    noise_state = wp.rand_init(seed, offset)
+    n = wp.noise(noise_state, local * noise_scale)
+    stiffness = stiffness * wp.max(1.0 + noise_amplitude * n, 0.1)
+
+    i = offset + tid
+    particles.positions[i] = position
+    particles.velocities[i] = velocity + wp.cross(angular_velocity, position - center)
+    particles.masses[i] = mass * heaviness
+    particles.volumes[i] = volume
+    particles.lambdas[i] = initial_lambda * stiffness
+    particles.mus[i] = initial_mu * stiffness
+    particles.critical_compressions[i] = critical_compression
+    particles.critical_stretches[i] = critical_stretch
+    particles.hardening_coefs[i] = hardening_coef
+    particles.elastic_deformations[i] = wp.identity(n=3, dtype=float)
+    particles.plastic_deformations[i] = wp.identity(n=3, dtype=float)
+
+
+@wp.func
+def hardening_factor(F_P: wp.mat33, xi: float) -> float:
+    Jp = wp.determinant(F_P)
+    return wp.exp(xi * (1.0 - Jp))
+
+
 @wp.func
 def mu_(
         plastic_deformation: wp.mat33, hardening_coef: float, initial_mu: float
 ) -> float:
-    Jp = wp.determinant(plastic_deformation)
-    hardening_mult = wp.exp(hardening_coef * (1.0 - Jp))
-    return initial_mu * hardening_mult
+    return initial_mu * hardening_factor(plastic_deformation, hardening_coef)
 
 
 @wp.func
 def lambda_(
         plastic_deformation: wp.mat33, hardening_coef: float, initial_lambda: float
 ) -> float:
-    Jp = wp.determinant(plastic_deformation)
-    hardening_mult = wp.exp(hardening_coef * (1.0 - Jp))
-    return initial_lambda * hardening_mult
+    return initial_lambda * hardening_factor(plastic_deformation, hardening_coef)
+
+
+def lame_parameters(young_modulus: float, poisson_ratio: float):
+    lam = (
+            young_modulus
+            * poisson_ratio
+            / ((1.0 + poisson_ratio) * (1.0 - 2.0 * poisson_ratio))
+    )
+    mu = young_modulus / (2.0 + 2.0 * poisson_ratio)
+    return lam, mu

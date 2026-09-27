@@ -67,6 +67,7 @@ class Solver:
     _active_count: wp.array[int]
 
     _max_speed_sq: wp.array[float]
+    _max_wave_speed: wp.array[float]
 
     _first: bool
 
@@ -159,6 +160,7 @@ class Solver:
         self._first = True
 
         self._max_speed_sq = wp.zeros(shape=1, dtype=float, device="cuda")
+        self._max_wave_speed = wp.zeros(shape=1, dtype=float, device="cuda")
 
         self._beta_dt2 = IMPLICIT_BETA * self._dt * self._dt
         self._rhs = wp.zeros(shape=[flat_size], dtype=wp.vec3, device="cuda")
@@ -189,25 +191,19 @@ class Solver:
 
     def _compute_dt(self):
         self._max_speed_sq.zero_()
+        self._max_wave_speed.zero_()
 
-        wp.launch(
-            kernel=k_max_speed_sq,
-            dim=len(self.particles),
-            inputs=[self.particles, self._max_speed_sq],
-        )
-        max_speed = float(np.sqrt(self._max_speed_sq.numpy()[0]))
+        wp.launch(k_max_speed_sq, dim=len(self.particles),
+                  inputs=[self.particles, self._max_speed_sq])
+        wp.launch(k_max_wave_speed, dim=len(self.particles),
+                  inputs=[self.particles, self._max_wave_speed])
 
-        h = min(
-            self.grid.cell_size[0],
-            self.grid.cell_size[1],
-            self.grid.cell_size[2],
-        )
+        v_max = float(np.sqrt(self._max_speed_sq.numpy()[0]))
+        c_max = float(self._max_wave_speed.numpy()[0])
 
-        if max_speed < 1e-8:
-            self._dt = MAX_DT
-        else:
-            dt = CFL_NUMBER * h / max_speed
-            self._dt = min(max(dt, MIN_DT), MAX_DT)
+        h = min(self.grid.cell_size[0], self.grid.cell_size[1], self.grid.cell_size[2])
+        dt = CFL_NUMBER * h / (c_max + v_max)
+        self._dt = min(max(dt, MIN_DT), MAX_DT)
 
     def update(self):
         # compute dt
@@ -325,8 +321,11 @@ class Solver:
             self._rhs,
             self._solution,
             tol=1e-4,
-            maxiter=2000,
+            maxiter=3000,
         )
+
+        # print(
+        #     f"CR: {iterations} iterations, residual {residual:.8f}, tolerance {tol:.8f}")
 
         wp.launch(
             kernel=k_scatter_solution,
@@ -1107,3 +1106,16 @@ def k_max_speed_sq(particles: Particles, max_speed_sq: wp.array(dtype=float)):
     p = wp.tid()
     v = particles.velocities[p]
     wp.atomic_max(max_speed_sq, 0, wp.dot(v, v))
+
+
+@wp.kernel
+def k_max_wave_speed(particles: Particles, out: wp.array(dtype=float)):
+    p = wp.tid()
+    F_E = particles.elastic_deformations[p]
+    F_P = particles.plastic_deformations[p]
+    xi = particles.hardening_coefs[p]
+    mu = mu_(F_P, xi, particles.mus[p])
+    lmbd = lambda_(F_P, xi, particles.lambdas[p])
+    J = wp.determinant(F_E) * wp.determinant(F_P)
+    rho = particles.masses[p] / (particles.volumes[p] * J)
+    wp.atomic_max(out, 0, wp.sqrt((lmbd + 2.0 * mu) / rho))

@@ -1,10 +1,10 @@
+from logging import critical
+
 import warp as wp
 from rich.progress import (
     BarColumn,
-    MofNCompleteColumn,
     Progress,
     ProgressColumn,
-    TaskProgressColumn,
     TextColumn,
     TimeRemainingColumn,
 )
@@ -14,13 +14,17 @@ import mpm_implicit.renderer as rd
 from mpm_implicit.grid import Grid
 from mpm_implicit.particles import Particles
 from mpm_implicit.solver import Solver
-from mpm_implicit.utils import import_mesh
 
-DURATION = 1.5
-FPS = 120
+DURATION = 1.0
+FPS = 30
 LOG_PER_STEP = False
 
 PARTICLES_PER_CELL = 8
+
+THROW_SPEED_X = 10.0
+THROW_SPEED_Y = 2.6
+BALL_RADIUS = 0.2
+BALL_HEIGHT = 0.7
 
 
 class SimTimeColumn(ProgressColumn):
@@ -57,34 +61,28 @@ def main():
 
     grid = Grid()
     grid.init(
-        min_coord=wp.vec3(-1.0, -1.2, -0.06),
-        max_coord=wp.vec3(1.0, 0.5, 1.5),
-        dimensions=wp.vec3ui(wp.uint32(200), wp.uint32(170), wp.uint32(156)),
+        min_coord=wp.vec3(-1.0, -1.00, 0.0),
+        max_coord=wp.vec3(1.0, 1.0, 1.5),
+        dimensions=wp.vec3ui(wp.uint32(200), wp.uint32(200), wp.uint32(300)),
     )
-
-    cell_width = min(grid.cell_size[0], grid.cell_size[1], grid.cell_size[2])
-
-    snowball_center = wp.vec3(0.0, 0.0, 1.0)
-    snowball_radius = 0.2
 
     particles = Particles()
     particles.add_snowball(
-        center=snowball_center,
-        radius=snowball_radius,
-        initial_velocity=wp.vec3(0.0, -14.0, 0.0),
-        spin_axis=wp.vec3(0.0, 1.0, 0.0),
-        angular_speed=3.14,
-        particle_diameter=cell_width / PARTICLES_PER_CELL ** (1.0 / 3.0),
+        center=wp.vec3(0.0, -0.7, BALL_HEIGHT),
+        radius=BALL_RADIUS,
+        initial_velocity=wp.vec3(0.0, THROW_SPEED_X, THROW_SPEED_Y),
+        critical_compression=1.9e-2,
+    )
+    particles.add_snowball(
+        center=wp.vec3(0.0, 0.7, BALL_HEIGHT),
+        radius=BALL_RADIUS,
+        initial_velocity=wp.vec3(0.0, -THROW_SPEED_X, THROW_SPEED_Y),
+        critical_compression=1.9e-2,
     )
 
-    obstacles = [
-        import_mesh("assets/models/floor.obj"),
-        import_mesh("assets/models/wall.obj"),
-    ]
+    solver = Solver(grid, particles, [])
 
-    solver = Solver(grid, particles, obstacles)
-
-    rd.init(grid, obstacles)
+    rd.init(grid, [])
 
     frame_duration = 1.0 / FPS
     next_frame_time = 0.0
@@ -101,7 +99,6 @@ def main():
         task = progress.add_task(description="Simulating...", total=DURATION)
         while solver.t < DURATION:
             solver.update()
-            rd.log_t(solver.t, solver.current_dt())
             if LOG_PER_STEP or solver.t >= next_frame_time:
                 rd.render(solver.t, solver.particles.positions.numpy())
                 next_frame_time += frame_duration

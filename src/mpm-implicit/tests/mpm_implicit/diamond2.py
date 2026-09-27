@@ -16,8 +16,8 @@ from mpm_implicit.particles import Particles
 from mpm_implicit.solver import Solver
 from mpm_implicit.utils import import_mesh
 
-DURATION = 1.5
-FPS = 120
+DURATION = 5.0
+FPS = 30
 LOG_PER_STEP = False
 
 PARTICLES_PER_CELL = 8
@@ -57,29 +57,23 @@ def main():
 
     grid = Grid()
     grid.init(
-        min_coord=wp.vec3(-1.0, -1.2, -0.06),
-        max_coord=wp.vec3(1.0, 0.5, 1.5),
-        dimensions=wp.vec3ui(wp.uint32(200), wp.uint32(170), wp.uint32(156)),
+        min_coord=wp.vec3(-2.0, -2.0, -0.06),
+        max_coord=wp.vec3(2.0, 2.0, 4.0),
+        dimensions=wp.vec3ui(wp.uint32(200), wp.uint32(200), wp.uint32(203)),
     )
 
-    cell_width = min(grid.cell_size[0], grid.cell_size[1], grid.cell_size[2])
-
-    snowball_center = wp.vec3(0.0, 0.0, 1.0)
-    snowball_radius = 0.2
+    cell_volume = grid.cell_size[0] * grid.cell_size[1] * grid.cell_size[2]
+    derived_density = PARTICLES_PER_CELL / cell_volume
 
     particles = Particles()
-    particles.add_snowball(
-        center=snowball_center,
-        radius=snowball_radius,
-        initial_velocity=wp.vec3(0.0, -14.0, 0.0),
-        spin_axis=wp.vec3(0.0, 1.0, 0.0),
-        angular_speed=3.14,
-        particle_diameter=cell_width / PARTICLES_PER_CELL ** (1.0 / 3.0),
+    particles.sample_mesh(
+        mesh=import_mesh("assets/models/snow_rectangle.obj"),
+        particle_density=derived_density
     )
 
     obstacles = [
         import_mesh("assets/models/floor.obj"),
-        import_mesh("assets/models/wall.obj"),
+        import_mesh("assets/models/diamond.obj"),
     ]
 
     solver = Solver(grid, particles, obstacles)
@@ -101,7 +95,6 @@ def main():
         task = progress.add_task(description="Simulating...", total=DURATION)
         while solver.t < DURATION:
             solver.update()
-            rd.log_t(solver.t, solver.current_dt())
             if LOG_PER_STEP or solver.t >= next_frame_time:
                 rd.render(solver.t, solver.particles.positions.numpy())
                 next_frame_time += frame_duration

@@ -9,11 +9,15 @@ DEFAULT_POISSON_RATIO = wp.constant(0.2)
 
 EPSILON = wp.constant(1e-12)
 GRAVITY = wp.constant(wp.vec3(0.0, 0.0, -9.81))
-COULOMB_FRICTION = wp.constant(0.5)
+COULOMB_FRICTION = wp.constant(0.0)
 PICFLIP_ALPHA = wp.constant(0.95)
 MAX_COLLISION_DIST = wp.constant(2.0)
 MIN_ACTIVE_MASS = wp.constant(1e-6)
 IMPLICIT_BETA = wp.constant(1.0)
 CFL_NUMBER = wp.constant(0.4)
-MIN_DT = wp.constant(1e-6)
+MIN_DT = wp.constant(5e-7)
 MAX_DT = wp.constant(5e-4)
+
+DEFAULT_PARTICLE_DIAMETER = 0.01
+MAX_SAMPLE_TRIES = 64
+VOLUME_EPSILON = 1e-12
