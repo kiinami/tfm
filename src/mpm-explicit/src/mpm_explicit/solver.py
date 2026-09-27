@@ -98,6 +98,8 @@ class Solver:
         self._first = wp.zeros(1, dtype=int)
         self._first.fill_(1)
 
+        _ = self.obstacle_ids
+
         self._graph = self._capture_graph()
 
     @cached_property
