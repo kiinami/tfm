@@ -7,7 +7,7 @@ from mpm_explicit.constants import (
     EPSILON,
     GRAVITY,
     MAX_COLLISION_DIST,
-    PICFLIP_ALPHA, DEFAULT_CFL, DEFAULT_MIN_DT, DEFAULT_MAX_DT,
+    PICFLIP_ALPHA, DEFAULT_CFL, DEFAULT_MIN_DT, DEFAULT_MAX_DT, EPSILON_SQ
 )
 from mpm_explicit.grid import Grid, grid_index_to_coord, grid_index_from_flat, grid_index_to_flat
 from mpm_explicit.particles import Particles
@@ -109,7 +109,7 @@ class Solver:
             wp.launch(
                 kernel=k_solver_set_initial_volumes,
                 dim=len(self.particles),
-                inputs=[self.particles, self._initial_densities],
+                inputs=[self.particles],
             )
 
             self._first.fill_(0)
@@ -241,7 +241,7 @@ class Solver:
 
     def update(self):
         wp.capture_launch(self._graph)
-        self.t += self.dt
+        self.t += float(self._dt.numpy()[0])
 
 
 @wp.func
@@ -262,7 +262,6 @@ def lambda_(
     return initial_lambda * hardening_mult
 
 
-
 @wp.kernel
 def k_solver_compute_max_speed_sq(
         particles: Particles,
@@ -273,7 +272,7 @@ def k_solver_compute_max_speed_sq(
     wp.atomic_max(max_speed_sq, 0, wp.dot(v, v))
 
 
-@wp.solver
+@wp.kernel
 def k_solver_compute_dt(
         max_speed_sq: wp.array[float],
         cell_size_min: float,
@@ -446,15 +445,9 @@ def k_solver_calculate_density(
 
 
 @wp.kernel
-def k_solver_set_initial_volumes(
-        particles: Particles, initial_densities: wp.array[float]
-):
+def k_solver_set_initial_volumes(particles: Particles):
     p = wp.tid()
-
-    density = initial_densities[p]
-    volume = particles.masses[p] / density
-
-    particles.volumes[p] = volume
+    particles.volumes[p] = particles.masses[p] / particles.densities[p]
 
 
 @wp.kernel

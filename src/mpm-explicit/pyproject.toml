@@ -10,10 +10,13 @@ requires-python = ">=3.14"
 dependencies = [
     "nvtx>=0.2.16",
     "rerun-sdk>=0.35.0",
-    "rich>=15.0.0",
     "trimesh>=5.0.0",
     "warp-lang>=1.15.0",
+    "core"
 ]
+
+[tool.uv.sources]
+core = { workspace = true }
 
 [project.scripts]
 mpm-explicit = "mpm_explicit:main"
