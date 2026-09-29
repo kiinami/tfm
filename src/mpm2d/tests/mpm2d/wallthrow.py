@@ -5,15 +5,15 @@ import warp as wp
 import mpm2d.renderer as rd
 from core.progress import MPMProgress
 from mpm2d.grid import Grid
-from mpm2d.particles import Particles, circle_particle_count
+from mpm2d.particles import Particles
 from mpm2d.solver import Method, Solver
 from mpm2d.utils import box_polygon
 
 
 def main(method: Method = Method.EXPLICIT):
-    max_coord = (2.0, 2.0)
-    min_coord = (0.0, 0.0)
-    dimensions = (128, 128)
+    min_coord = (-2.0, -0.05)
+    max_coord = (2.0, 4.0)
+    dimensions = (200, 305)
 
     grid = Grid()
     grid.init(
@@ -25,50 +25,22 @@ def main(method: Method = Method.EXPLICIT):
         ),
     )
 
-    particles = Particles()
-
     cell_size = tuple(
         (hi - lo) / n
         for hi, lo, n in zip(max_coord, min_coord, dimensions, strict=True)
     )
-    particle_diam = cell_size[0] * 0.5
-    emitters = [
-        {
-            "center": wp.vec2(1.7, 1.7),
-            "radius": 0.15,
-            "velocity": wp.vec2(-2.0, -2.0),
-        },
-        {
-            "center": wp.vec2(1.7, 0.3),
-            "radius": 0.2,
-            "velocity": wp.vec2(-3.0, 3.0),
-        },
-        {
-            "center": wp.vec2(0.37, 1.75),
-            "radius": 0.2,
-            "velocity": wp.vec2(3.0, -2.0),
-        },
-    ]
 
-    total_particles = sum(
-        circle_particle_count(e["radius"], particle_diam) for e in emitters
+    particles = Particles()
+    particles.sample_circle(
+        center=wp.vec2(0.0, 2.5),
+        radius=0.2,
+        velocity=wp.vec2(-3.0, 0.0),
+        particle_diam=cell_size[0] * 0.5,
     )
-    particles.init(total_particles)
-
-    offset = 0
-    for emitter in emitters:
-        offset += particles.fill_circle(
-            offset=offset,
-            center=emitter["center"],
-            radius=emitter["radius"],
-            particle_diam=particle_diam,
-            velocity=emitter["velocity"],
-        )
-
-    particles.fill_deformations()
 
     obstacles = [
         box_polygon((-2.0, -0.1), (2.0, 0.1)),
+        box_polygon((-1.13, 0.0), (-0.93, 4.0)),
     ]
 
     solver = Solver(grid, particles, obstacles, method=method)

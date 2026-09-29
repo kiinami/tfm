@@ -9,8 +9,13 @@ authors = [
 requires-python = ">=3.14"
 dependencies = [
     "nvtx>=0.2.16",
-    "warp-lang>=1.15.0",
+    "rerun-sdk>=0.37.2",
+    "warp-lang>=1.17.0",
+    "core"
 ]
+
+[tool.uv.sources]
+core = { workspace = true }
 
 [project.scripts]
 mpm2d = "mpm2d:main"

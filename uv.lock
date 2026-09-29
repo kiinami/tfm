@@ -101,14 +101,18 @@ name = "mpm2d"
 version = "0.1.0"
 source = { editable = "src/mpm2d" }
 dependencies = [
+    { name = "core" },
     { name = "nvtx" },
+    { name = "rerun-sdk" },
     { name = "warp-lang" },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "core", editable = "src/core" },
     { name = "nvtx", specifier = ">=0.2.16" },
-    { name = "warp-lang", specifier = ">=1.15.0" },
+    { name = "rerun-sdk", specifier = ">=0.37.2" },
+    { name = "warp-lang", specifier = ">=1.17.0" },
 ]
 
 [[package]]

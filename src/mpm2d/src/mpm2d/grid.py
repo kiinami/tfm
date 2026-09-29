@@ -5,6 +5,9 @@ import warp as wp
 
 @wp.struct
 class Grid:
+    """
+    A eulerian grid calculated over a set of particles
+    """
     min_coord: wp.vec2
     max_coord: wp.vec2
     dimensions: wp.vec2ui
@@ -14,6 +17,8 @@ class Grid:
     velocities: wp.array2d[wp.vec2]
     new_velocities: wp.array2d[wp.vec2]
     forces: wp.array2d[wp.vec2]
+
+    is_active: wp.array2d[bool]
 
     @cached_property
     def flat_dimensions(self) -> int:
@@ -32,12 +37,39 @@ class Grid:
         self.velocities = wp.zeros(shape=self.dimensions, dtype=wp.vec2)
         self.new_velocities = wp.zeros(shape=self.dimensions, dtype=wp.vec2)
         self.forces = wp.zeros(shape=self.dimensions, dtype=wp.vec2)
+        self.is_active = wp.zeros(shape=self.dimensions, dtype=bool)
+
+    def min_size(self) -> float:
+        return float(min(self.cell_size[0], self.cell_size[1]))
+
+    def center(self) -> wp.vec2:
+        return (self.min_coord + self.max_coord) * 0.5
+
+    def half_dimensions(self) -> wp.vec2:
+        return wp.vec2(
+            float(self.dimensions[0]) * 0.5,
+            float(self.dimensions[1]) * 0.5,
+        )
 
     def clear(self):
         self.masses.zero_()
+        self.is_active.zero_()
         self.velocities.zero_()
         self.new_velocities.zero_()
         self.forces.zero_()
+
+
+@wp.func
+def grid_index_from_flat(grid: Grid, idx: wp.int32) -> tuple[wp.int32, wp.int32]:
+    dim_y = int(grid.dimensions[1])
+    i = idx // dim_y
+    j = idx % dim_y
+    return (i, j)
+
+
+@wp.func
+def grid_index_to_flat(grid: Grid, i: wp.int32, j: wp.int32) -> wp.int32:
+    return i * int(grid.dimensions[1]) + j
 
 
 @wp.func
