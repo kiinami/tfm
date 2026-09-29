@@ -15,6 +15,7 @@ from mpm13.constants import (
     IMPLICIT_BETA,
     MAX_COLLISION_DIST,
     PICFLIP_ALPHA,
+    WALL_LAYERS
 )
 from mpm13.grid import Grid, grid_index_to_coord, grid_index_from_flat, grid_index_to_flat
 from mpm13.particles import Particles
@@ -33,6 +34,11 @@ from mpm13.utils import (
 class Method(StrEnum):
     EXPLICIT = "explicit"
     IMPLICIT = "implicit"
+
+
+class Transfer(StrEnum):
+    PIC_FLIP = "pic_flip"
+    APIC = "apic"
 
 
 @wp.struct
@@ -90,6 +96,7 @@ class Solver:
 
     _first: wp.array[int]
     _implicit: wp.array[int]
+    _apic: wp.array[int]
 
     _graph: wp.Graph
 
@@ -147,6 +154,7 @@ class Solver:
             particles: Particles,
             obstacles: list[wp.Mesh],
             method: Method = Method.EXPLICIT,
+            transfer: Transfer = Transfer.APIC,
             cfl: float = DEFAULT_CFL,
             min_dt: float = DEFAULT_MIN_DT,
             max_dt: float = DEFAULT_MAX_DT,
@@ -181,6 +189,8 @@ class Solver:
         self._first.fill_(1)
         self._implicit = wp.zeros(1, dtype=int)
         self.method = method
+        self._apic = wp.zeros(1, dtype=int)
+        self.transfer = transfer
 
         self._rhs = wp.zeros(shape=[flat_size], dtype=wp.vec3)
         self._solution = wp.zeros(shape=[flat_size], dtype=wp.vec3)
@@ -222,6 +232,14 @@ class Solver:
     def method(self, method: Method):
         self._implicit.fill_(int(Method(method) == Method.IMPLICIT))
 
+    @property
+    def transfer(self) -> Transfer:
+        return Transfer.APIC if self._apic.numpy()[0] else Transfer.PIC_FLIP
+
+    @transfer.setter
+    def transfer(self, transfer: Transfer):
+        self._apic.fill_(int(Transfer(transfer) == Transfer.APIC))
+
     def _implicit_solve(self):
         wp.launch(
             kernel=k_solver_gather_sqrt_mass,
@@ -260,6 +278,20 @@ class Solver:
                 self._node_sqrt_mass,
                 self._solution,
             ],
+        )
+
+    def _g2p_apic(self):
+        wp.launch(
+            kernel=k_solver_g2p_apic,
+            dim=len(self.particles),
+            inputs=[self.particles, self.grid, self._weights],
+        )
+
+    def _g2p_picflip(self):
+        wp.launch(
+            kernel=k_solver_g2p_picflip,
+            dim=len(self.particles),
+            inputs=[self.particles, self.grid, self._weights],
         )
 
     def _capture_graph(self):
@@ -378,10 +410,10 @@ class Solver:
             )
 
             # g2p
-            wp.launch(
-                kernel=k_solver_g2p,
-                dim=len(self.particles),
-                inputs=[self.particles, self.grid, self._weights],
+            wp.capture_if(
+                self._apic,
+                on_true=self._g2p_apic,
+                on_false=self._g2p_picflip,
             )
 
             # update particles
@@ -504,6 +536,14 @@ def k_solver_p2g(particles: Particles, grid: Grid, weights: Weights):
 
     mass = particles.masses[p]
     velocity = particles.velocities[p]
+    position = particles.positions[p]
+
+    D_inverse = wp.vec3(
+        3.0 / (grid.cell_size[0] * grid.cell_size[0]),
+        3.0 / (grid.cell_size[1] * grid.cell_size[1]),
+        3.0 / (grid.cell_size[2] * grid.cell_size[2])
+    )
+    C = particles.affine_matrices[p] @ wp.diag(D_inverse)
 
     base = weights.base[p]
     wx = weights.wx[p]
@@ -528,10 +568,12 @@ def k_solver_p2g(particles: Particles, grid: Grid, weights: Weights):
                     continue
 
                 weight = wx[di] * wy[dj] * wz[dk]
+                offset = grid_index_to_coord(grid, i, j, k) - position
 
                 wp.atomic_add(grid.masses, i, j, k, weight * mass)
                 wp.atomic_add(
-                    grid.velocities, i, j, k, weight * mass * velocity
+                    grid.velocities, i, j, k,
+                    weight * mass * (velocity + C @ offset),
                 )
 
 
@@ -764,6 +806,16 @@ def k_solver_calculate_grid_collisions(
                             * velocity_normal
                             * (velocity_tangent / wp.length(velocity_tangent))
                     )
+
+    # domain walls: separating slip condition on the outer WALL_LAYERS node layers
+    idx = wp.vec3i(i, j, k)
+    for a in range(3):
+        if idx[a] < WALL_LAYERS and velocity[a] < 0.0:
+            velocity[a] = 0.0
+            is_constrained = wp.int32(1)
+        if idx[a] >= int(grid.dimensions[a]) - WALL_LAYERS and velocity[a] > 0.0:
+            velocity[a] = 0.0
+            is_constrained = wp.int32(1)
 
     grid.new_velocities[i, j, k] = velocity
     constrained[active_id] = is_constrained
@@ -1058,7 +1110,7 @@ def k_solver_update_deformations(
 
 
 @wp.kernel
-def k_solver_g2p(particles: Particles, grid: Grid, weights: Weights):
+def k_solver_g2p_picflip(particles: Particles, grid: Grid, weights: Weights):
     p = wp.tid()
 
     base = weights.base[p]
@@ -1093,9 +1145,50 @@ def k_solver_g2p(particles: Particles, grid: Grid, weights: Weights):
                 v_pic += node_new_velocity * weight
                 v_flip += (node_new_velocity - node_velocity) * weight
 
-    particles.velocities[p] = (
-                                      1.0 - PICFLIP_ALPHA
-                              ) * v_pic + PICFLIP_ALPHA * v_flip
+    particles.velocities[p] = (1.0 - PICFLIP_ALPHA) * v_pic + PICFLIP_ALPHA * v_flip
+    particles.affine_matrices[p] = wp.mat33(0.0)
+
+
+@wp.kernel
+def k_solver_g2p_apic(particles: Particles, grid: Grid, weights: Weights):
+    p = wp.tid()
+
+    base = weights.base[p]
+    wx = weights.wx[p]
+    wy = weights.wy[p]
+    wz = weights.wz[p]
+
+    position = particles.positions[p]
+
+    velocity = wp.vec3(0.0)
+    B = wp.mat33(0.0)
+
+    for dk in range(4):
+        for dj in range(4):
+            for di in range(4):
+                i = base[0] + di
+                j = base[1] + dj
+                k = base[2] + dk
+
+                if (
+                        i < 0
+                        or i >= grid.masses.shape[0]
+                        or j < 0
+                        or j >= grid.masses.shape[1]
+                        or k < 0
+                        or k >= grid.masses.shape[2]
+                ):
+                    continue
+
+                weight = wx[di] * wy[dj] * wz[dk]
+                node_new_velocity = grid.new_velocities[i, j, k]
+                offset = grid_index_to_coord(grid, i, j, k) - position
+
+                velocity += weight * node_new_velocity
+                B += weight * wp.outer(node_new_velocity, offset)
+
+    particles.velocities[p] = velocity
+    particles.affine_matrices[p] = B
 
 
 @wp.kernel

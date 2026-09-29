@@ -33,6 +33,7 @@ class Particles:
 
     positions: wp.array[wp.vec3]
     velocities: wp.array[wp.vec3]
+    affine_matrices: wp.array[wp.mat33]
     elastic_deformations: wp.array[wp.mat33]
     plastic_deformations: wp.array[wp.mat33]
 
@@ -49,6 +50,7 @@ class Particles:
 
         self.positions = wp.empty(shape=n, dtype=wp.vec3)
         self.velocities = wp.empty(shape=n, dtype=wp.vec3)
+        self.affine_matrices = wp.zeros(shape=n, dtype=wp.mat33)
         self.elastic_deformations = wp.empty(shape=n, dtype=wp.mat33)
         self.plastic_deformations = wp.empty(shape=n, dtype=wp.mat33)
 

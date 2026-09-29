@@ -47,15 +47,16 @@ def init(grid: Grid, obstacles: list[wp.Mesh]):
         )
 
 
-def render(t: float, particles: Particles, contrast: float = 0.5):
+def render(t: float, particles: Particles, min_alpha: float = 0.1):
     rr.set_time("step", timestamp=t)
 
     densities = particles.densities.numpy()
     reference_densities = particles.masses.numpy() / particles.volumes.numpy()
 
-    shade = densities / reference_densities * contrast + (1.0 - contrast)
-    shade = np.clip(shade, 0.0, 1.0)
+    ratio = np.clip(densities / reference_densities, 0.0, 1.0)
+    alpha = min_alpha + (1.0 - min_alpha) * ratio
 
-    colors = np.repeat((shade * 255.0).astype(np.uint8)[:, None], 3, axis=1)
+    colors = np.full((len(alpha), 4), 255, dtype=np.uint8)
+    colors[:, 3] = (alpha * 255.0).astype(np.uint8)
 
     rr.log("mpm/particles", rr.Points3D(positions=particles.positions.numpy(), colors=colors))
