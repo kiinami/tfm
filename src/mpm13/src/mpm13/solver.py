@@ -1,24 +1,24 @@
+from enum import StrEnum
 from functools import cached_property
 
-import numpy as np
 import warp as wp
-from warp.optim.linear import LinearOperator, cr
+from warp.optim.linear import CR, LinearOperator, cr
 
-from mpm_implicit.constants import (
-    DEFAULT_CFL,
+from mpm13.constants import (
     COULOMB_FRICTION,
+    DEFAULT_CFL,
+    DEFAULT_MAX_DT,
+    DEFAULT_MIN_DT,
     EPSILON,
+    EPSILON_SQ,
     GRAVITY,
     IMPLICIT_BETA,
     MAX_COLLISION_DIST,
-    DEFAULT_MAX_DT,
-    DEFAULT_MIN_DT,
     PICFLIP_ALPHA,
-    EPSILON_SQ
 )
-from mpm_implicit.grid import Grid, grid_index_to_coord, grid_index_from_flat, grid_index_to_flat
-from mpm_implicit.particles import Particles
-from mpm_implicit.utils import (
+from mpm13.grid import Grid, grid_index_to_coord, grid_index_from_flat, grid_index_to_flat
+from mpm13.particles import Particles
+from mpm13.utils import (
     bspline_dw,
     bspline_w,
     cofactor,
@@ -28,6 +28,11 @@ from mpm_implicit.utils import (
     rotation_differential,
     safe_svd3,
 )
+
+
+class Method(StrEnum):
+    EXPLICIT = "explicit"
+    IMPLICIT = "implicit"
 
 
 @wp.struct
@@ -58,6 +63,8 @@ class Solver:
     cfl: float
     min_dt: float
     max_dt: float
+    cr_tol: float
+    cr_maxiter: int
     t: float = 0
 
     _weights: Weights
@@ -72,16 +79,19 @@ class Solver:
     _active_offsets: wp.array[int]
     _active_nodes: wp.array[wp.vec3i]
 
-    _beta_dt2: wp.array[float]
     _hx: wp.array[wp.vec3]
     _rhs: wp.array[wp.vec3]
     _solution: wp.array[wp.vec3]
     _node_sqrt_mass: wp.array[float]
     _v_candidate: wp.array[wp.vec3]
     _operator: LinearOperator
+    _cr: CR
     _constrained: wp.array[int]
 
-    _first: bool
+    _first: wp.array[int]
+    _implicit: wp.array[int]
+
+    _graph: wp.Graph
 
     def _matvec(self):
         def matvec(y, y_other, z, alpha, beta):
@@ -136,9 +146,12 @@ class Solver:
             grid: Grid,
             particles: Particles,
             obstacles: list[wp.Mesh],
+            method: Method = Method.EXPLICIT,
             cfl: float = DEFAULT_CFL,
             min_dt: float = DEFAULT_MIN_DT,
-            max_dt: float = DEFAULT_MAX_DT
+            max_dt: float = DEFAULT_MAX_DT,
+            cr_tol: float = 1e-4,
+            cr_maxiter: int = 3000,
     ):
         self.grid = grid
         self.particles = particles
@@ -146,6 +159,8 @@ class Solver:
         self.cfl = cfl
         self.min_dt = min_dt
         self.max_dt = max_dt
+        self.cr_tol = cr_tol
+        self.cr_maxiter = cr_maxiter
 
         self._weights = Weights()
         self._weights.init(len(particles))
@@ -162,7 +177,10 @@ class Solver:
         self._active_nodes = wp.zeros(shape=[flat_size], dtype=wp.vec3i)
         self._active_count = wp.zeros(shape=1, dtype=wp.int32)
 
-        self._first = True
+        self._first = wp.zeros(1, dtype=int)
+        self._first.fill_(1)
+        self._implicit = wp.zeros(1, dtype=int)
+        self.method = method
 
         self._rhs = wp.zeros(shape=[flat_size], dtype=wp.vec3)
         self._solution = wp.zeros(shape=[flat_size], dtype=wp.vec3)
@@ -178,113 +196,33 @@ class Solver:
             matvec=self._matvec(),
         )
 
-    @property
+        self._cr = cr(
+            self._operator,
+            self._rhs,
+            self._solution,
+            tol=self.cr_tol,
+            maxiter=self.cr_maxiter,
+            check_every=0,
+            run=False,
+        )
+
+        _ = self.obstacle_ids
+
+        self._graph = self._capture_graph()
+
+    @cached_property
     def obstacle_ids(self) -> wp.array[wp.uint64]:
         return wp.array([obs.id for obs in self.obstacles], dtype=wp.uint64)
 
-    def update(self):
-        # compute dt
-        wp.launch(
-            kernel=k_solver_compute_max_speed_sq,
-            dim=len(self.particles),
-            inputs=[self.particles, self._max_speed_sq],
-        )
+    @property
+    def method(self) -> Method:
+        return Method.IMPLICIT if self._implicit.numpy()[0] else Method.EXPLICIT
 
-        wp.launch(
-            kernel=k_solver_compute_dt,
-            dim=1,
-            inputs=[
-                self._max_speed_sq,
-                self._min_cell_size,
-                self.cfl,
-                self.max_dt,
-                self.min_dt,
-                self._dt,
-                self._beta_dt2
-            ],
-        )
+    @method.setter
+    def method(self, method: Method):
+        self._implicit.fill_(int(Method(method) == Method.IMPLICIT))
 
-        # p2g
-        wp.launch(
-            kernel=k_solver_compute_weights,
-            dim=len(self.particles),
-            inputs=[self.particles, self.grid, self._weights],
-        )
-
-        wp.launch(
-            kernel=k_solver_p2g,
-            dim=len(self.particles),
-            inputs=[self.particles, self.grid, self._weights],
-        )
-
-        wp.launch(
-            kernel=k_solver_calculate_density,
-            dim=len(self.particles),
-            inputs=[self.grid, self._weights, self.particles],
-        )
-
-        wp.launch(
-            kernel=k_solver_normalize_grid,
-            dim=self.grid.dimensions,
-            inputs=[self.grid, self._active_flags],
-        )
-
-        wp.utils.array_scan(
-            self._active_flags, self._active_offsets, inclusive=False
-        )
-
-        wp.launch(
-            kernel=k_solver_collect_active_nodes,
-            dim=self.grid.flat_dimensions,
-            inputs=[
-                self.grid,
-                self._active_flags,
-                self._active_offsets,
-                self._active_nodes,
-                self._active_count,
-            ],
-        )
-
-        # update nodes
-        if self._first:
-            self._first = False
-
-            wp.launch(
-                kernel=k_solver_set_initial_volumes,
-                dim=len(self.particles),
-                inputs=[self.particles],
-            )
-
-        wp.launch(
-            kernel=k_solver_calculate_forces,
-            dim=len(self.particles),
-            inputs=[self.grid, self._weights, self.particles],
-        )
-
-        wp.launch(
-            kernel=k_solver_update_grid,
-            dim=self.grid.flat_dimensions,
-            inputs=[
-                self.grid,
-                self._active_nodes,
-                self._active_count,
-                self._dt,
-            ],
-        )
-
-        wp.launch(
-            kernel=k_solver_calculate_grid_collisions,
-            dim=self.grid.flat_dimensions,
-            inputs=[
-                self.grid,
-                self._active_nodes,
-                self._active_count,
-                self.obstacle_ids,
-                self._dt,
-                self._constrained,
-            ],
-        )
-
+    def _implicit_solve(self):
         wp.launch(
             kernel=k_solver_gather_sqrt_mass,
             dim=self.grid.flat_dimensions,
@@ -310,16 +248,7 @@ class Solver:
 
         self._solution.assign(self._rhs)
 
-        iterations, residual, tol = cr(
-            self._operator,
-            self._rhs,
-            self._solution,
-            tol=1e-4,
-            maxiter=3000,
-        )
-
-        # print(
-        #     f"CR: {iterations} iterations, residual {residual:.8f}, tolerance {tol:.8f}")
+        self._cr()
 
         wp.launch(
             kernel=k_solver_scatter_solution,
@@ -333,35 +262,148 @@ class Solver:
             ],
         )
 
-        wp.launch(
-            kernel=k_solver_update_deformations,
-            dim=len(self.particles),
-            inputs=[self.particles, self.grid, self._weights, self._dt],
-        )
+    def _capture_graph(self):
+        with wp.ScopedCapture(capture_mode=wp.CaptureMode.RELAXED) as first_capture:
+            wp.launch(
+                kernel=k_solver_set_initial_volumes,
+                dim=len(self.particles),
+                inputs=[self.particles],
+            )
 
-        # g2p
-        wp.launch(
-            kernel=k_solver_g2p,
-            dim=len(self.particles),
-            inputs=[self.particles, self.grid, self._weights],
-        )
+            self._first.fill_(0)
 
-        # update particles
-        wp.launch(
-            kernel=k_solver_calculate_particle_collisions,
-            dim=len(self.particles),
-            inputs=[self.particles, self.obstacle_ids, self._dt],
-        )
-        wp.launch(
-            kernel=k_solver_advect_particle_positions,
-            dim=len(self.particles),
-            inputs=[self.particles, self._dt],
-        )
+        with wp.ScopedCapture(capture_mode=wp.CaptureMode.RELAXED) as capture:
+            # compute dt
+            wp.launch(
+                kernel=k_solver_compute_max_speed_sq,
+                dim=len(self.particles),
+                inputs=[self.particles, self._max_speed_sq],
+            )
 
-        # clear
-        self.grid.clear()
-        self._max_speed_sq.zero_()
+            wp.launch(
+                kernel=k_solver_compute_dt,
+                dim=1,
+                inputs=[
+                    self._max_speed_sq,
+                    self._min_cell_size,
+                    self.cfl,
+                    self.max_dt,
+                    self.min_dt,
+                    self._dt,
+                    self._beta_dt2,
+                ],
+            )
 
+            # p2g
+            wp.launch(
+                kernel=k_solver_compute_weights,
+                dim=len(self.particles),
+                inputs=[self.particles, self.grid, self._weights],
+            )
+
+            wp.launch(
+                kernel=k_solver_p2g,
+                dim=len(self.particles),
+                inputs=[self.particles, self.grid, self._weights],
+            )
+
+            wp.launch(
+                kernel=k_solver_calculate_density,
+                dim=len(self.particles),
+                inputs=[self.grid, self._weights, self.particles],
+            )
+
+            wp.launch(
+                kernel=k_solver_normalize_grid,
+                dim=self.grid.dimensions,
+                inputs=[self.grid, self._active_flags],
+            )
+
+            wp.utils.array_scan(
+                self._active_flags, self._active_offsets, inclusive=False
+            )
+
+            wp.launch(
+                kernel=k_solver_collect_active_nodes,
+                dim=self.grid.flat_dimensions,
+                inputs=[
+                    self.grid,
+                    self._active_flags,
+                    self._active_offsets,
+                    self._active_nodes,
+                    self._active_count,
+                ],
+            )
+
+            # update nodes
+            wp.capture_if(self._first, first_capture.graph)
+
+            wp.launch(
+                kernel=k_solver_calculate_forces,
+                dim=len(self.particles),
+                inputs=[self.grid, self._weights, self.particles],
+            )
+
+            wp.launch(
+                kernel=k_solver_update_grid,
+                dim=self.grid.flat_dimensions,
+                inputs=[
+                    self.grid,
+                    self._active_nodes,
+                    self._active_count,
+                    self._dt,
+                ],
+            )
+
+            wp.launch(
+                kernel=k_solver_calculate_grid_collisions,
+                dim=self.grid.flat_dimensions,
+                inputs=[
+                    self.grid,
+                    self._active_nodes,
+                    self._active_count,
+                    self.obstacle_ids,
+                    self._dt,
+                    self._constrained,
+                ],
+            )
+
+            # implicit velocity update, skipped when explicit
+            wp.capture_if(self._implicit, self._implicit_solve)
+
+            wp.launch(
+                kernel=k_solver_update_deformations,
+                dim=len(self.particles),
+                inputs=[self.particles, self.grid, self._weights, self._dt],
+            )
+
+            # g2p
+            wp.launch(
+                kernel=k_solver_g2p,
+                dim=len(self.particles),
+                inputs=[self.particles, self.grid, self._weights],
+            )
+
+            # update particles
+            wp.launch(
+                kernel=k_solver_calculate_particle_collisions,
+                dim=len(self.particles),
+                inputs=[self.particles, self.obstacle_ids, self._dt],
+            )
+            wp.launch(
+                kernel=k_solver_advect_particle_positions,
+                dim=len(self.particles),
+                inputs=[self.particles, self._dt],
+            )
+
+            # clear
+            self.grid.clear()
+            self._max_speed_sq.zero_()
+
+        return capture.graph
+
+    def update(self):
+        wp.capture_launch(self._graph)
         self.t += float(self._dt.numpy()[0])
 
     def current_dt(self):
@@ -524,11 +566,7 @@ def k_solver_collect_active_nodes(
 
     if active_flags[flat_idx] == 1:
         offset = active_offsets[flat_idx]
-
-        i = flat_idx // (dim_y * dim_z)
-        rem = flat_idx % (dim_y * dim_z)
-        j = rem // dim_z
-        k = rem % dim_z
+        (i, j, k) = grid_index_from_flat(grid, flat_idx)
 
         active_nodes[offset] = wp.vec3i(i, j, k)
 

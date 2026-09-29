@@ -7,7 +7,7 @@ The objective of the thesis is to implement a custom user-controllable node-base
 ## Current projects
 
 - **[WIP] [src/canny](src/canny/README.md)**: A Canny edge detector implemented in Python using the Nvidia Warp library.
-- **[WIP] [src/mpm-explicit](src/mpm-explicit/README.md)**: A 3D Material Point Method (MPM) simulator implemented in Python using the Nvidia Warp library, and following the implementation of [^1].
+- **[WIP] [src/mpm13](src/mpm13/README.md)**: A 3D Material Point Method (MPM) snow simulator implemented in Python using the Nvidia Warp library, following the implementation of [^1], with selectable explicit or semi-implicit time integration.
 - **[WIP] [src/mpm16](src/mpm16/README.md)**: A 3D Material Point Method (MPM) simulator implemented in Python using the Nvidia Warp library, and following the implementation of [^2].
 - **[docs/](docs/README.md)**: Documentation for the thesis, including notes and references.
 

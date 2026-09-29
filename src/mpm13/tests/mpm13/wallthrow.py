@@ -1,17 +1,19 @@
+import sys
+
 import warp as wp
 
-import mpm_explicit.renderer as rd
+import mpm13.renderer as rd
 from core.progress import MPMProgress
-from mpm_explicit.grid import Grid
-from mpm_explicit.particles import Particles
-from mpm_explicit.solver import Solver
-from mpm_explicit.utils import import_mesh
+from mpm13.grid import Grid
+from mpm13.particles import Particles
+from mpm13.solver import Method, Solver
+from mpm13.utils import import_mesh
 
 
-def main():
-    max_coord = (1.0, 1.0, 3.0)
-    min_coord = (-1.0, -1.0, 0.0)
-    dimensions = (128, 128, 128)
+def main(method: Method = Method.EXPLICIT):
+    min_coord = (-2.0, -2.0, -0.05)
+    max_coord = (2.0, 2.0, 4.0)
+    dimensions = (200, 200, 305)
 
     grid = Grid()
     grid.init(
@@ -31,18 +33,18 @@ def main():
 
     particles = Particles()
     particles.sample_sphere(
-        center=wp.vec3(0.0, 0.0, 2.7),
+        center=wp.vec3(0.0, 0.0, 2.5),
         radius=0.2,
-        velocity=wp.vec3(0.0, 0.0, -3.0),
+        velocity=wp.vec3(0.0, -3.0, 0.0),
         particle_diam=cell_size[0] * 0.5,
     )
 
     obstacles = [
         import_mesh("assets/models/floor_thick.obj"),
-        import_mesh("assets/models/diamond.obj"),
+        import_mesh("assets/models/wall_thick.obj"),
     ]
 
-    solver = Solver(grid, particles, obstacles)
+    solver = Solver(grid, particles, obstacles, method=method)
 
     rd.init(grid, obstacles)
 
@@ -55,4 +57,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    main(Method(sys.argv[1]) if len(sys.argv) > 1 else Method.EXPLICIT)

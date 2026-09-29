@@ -6,8 +6,7 @@ requires-python = ">=3.14"
 members = [
     "canny",
     "core",
-    "mpm-explicit",
-    "mpm-implicit",
+    "mpm13",
     "mpm16",
     "mpm2d",
     "tfm",
@@ -72,30 +71,9 @@ wheels = [
 ]
 
 [[package]]
-name = "mpm-explicit"
+name = "mpm13"
 version = "0.1.0"
-source = { editable = "src/mpm-explicit" }
-dependencies = [
-    { name = "core" },
-    { name = "nvtx" },
-    { name = "rerun-sdk" },
-    { name = "trimesh" },
-    { name = "warp-lang" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "core", editable = "src/core" },
-    { name = "nvtx", specifier = ">=0.2.16" },
-    { name = "rerun-sdk", specifier = ">=0.35.0" },
-    { name = "trimesh", specifier = ">=5.0.0" },
-    { name = "warp-lang", specifier = ">=1.15.0" },
-]
-
-[[package]]
-name = "mpm-implicit"
-version = "0.1.0"
-source = { editable = "src/mpm-implicit" }
+source = { editable = "src/mpm13" }
 dependencies = [
     { name = "core" },
     { name = "nvtx" },

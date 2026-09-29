@@ -1,14 +1,16 @@
+import sys
+
 import warp as wp
 
-import mpm_implicit.renderer as rd
+import mpm13.renderer as rd
 from core.progress import MPMProgress
-from mpm_implicit.grid import Grid
-from mpm_implicit.particles import Particles, sphere_particle_count
-from mpm_implicit.solver import Solver
-from mpm_implicit.utils import import_mesh
+from mpm13.grid import Grid
+from mpm13.particles import Particles, sphere_particle_count
+from mpm13.solver import Method, Solver
+from mpm13.utils import import_mesh
 
 
-def main():
+def main(method: Method = Method.EXPLICIT):
     max_coord = (1.0, 2.0, 2.0)
     min_coord = (-1.0, 0.0, 0.0)
     dimensions = (128, 128, 128)
@@ -70,7 +72,7 @@ def main():
         import_mesh("assets/models/floor_thick.obj"),
     ]
 
-    solver = Solver(grid, particles, obstacles)
+    solver = Solver(grid, particles, obstacles, method=method)
 
     rd.init(grid, obstacles)
 
@@ -83,4 +85,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    main(Method(sys.argv[1]) if len(sys.argv) > 1 else Method.EXPLICIT)
