@@ -3,8 +3,8 @@ import rerun as rr
 import rerun.blueprint as rrb
 import warp as wp
 
-from mpm13.grid import Grid
-from mpm13.particles import Particles
+from mlsmpm.grid import Grid
+from mlsmpm.particles import Particles
 
 
 def init(grid: Grid, obstacles: list[wp.Mesh]):

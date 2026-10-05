@@ -3,7 +3,7 @@ import math
 import numpy as np
 import warp as wp
 
-from mpm13.constants import (
+from mlsmpm.constants import (
     DEFAULT_CRITICAL_COMPRESSION,
     DEFAULT_CRITICAL_STRETCH,
     DEFAULT_DENSITY,
