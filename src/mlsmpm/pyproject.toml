@@ -1,5 +1,5 @@
 [project]
-name = "mpm16"
+name = "mlsmpm"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
@@ -7,11 +7,18 @@ authors = [
     { name = "kiinami", email = "kinami@posteo.net" }
 ]
 requires-python = ">=3.14"
-dependencies = []
+dependencies = [
+    "nvtx>=0.2.16",
+    "warp-sdk>=0.1.1",
+    "core"
+]
+
+[tool.uv.sources]
+core = { workspace = true }
 
 [project.scripts]
-mpm16 = "mpm16:main"
+mlsmpm = "mlsmpm:main"
 
 [build-system]
-requires = ["uv_build>=0.12.3,<0.13.0"]
+requires = ["uv_build>=0.12.19,<0.13.0"]
 build-backend = "uv_build"
